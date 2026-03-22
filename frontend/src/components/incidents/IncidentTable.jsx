@@ -13,7 +13,7 @@ const COLUMNS = [
 
 function SortIcon({ active, direction }) {
   if (!active) {
-    return <span className="text-gray-600 ml-1">&udarr;</span>;
+    return <span className="text-gray-600 ml-1">{"\u21C5"}</span>;
   }
   return (
     <span className="text-blue-400 ml-1">
