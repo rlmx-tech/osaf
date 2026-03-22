@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.34",
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.30",
+    "psycopg2-binary>=2.9",
     "geoalchemy2>=0.15",
     "alembic>=1.14",
     "pydantic>=2.10",
