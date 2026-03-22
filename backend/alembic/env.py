@@ -21,6 +21,25 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# PostGIS ships with tiger geocoder and topology tables — exclude them from autogenerate
+EXCLUDE_TABLES = {
+    "spatial_ref_sys", "topology", "layer",
+    # tiger geocoder tables
+    "addr", "addrfeat", "bg", "county", "county_lookup", "countysub_lookup",
+    "cousub", "direction_lookup", "edges", "faces", "featnames", "geocode_settings",
+    "geocode_settings_default", "loader_lookuptables", "loader_platform",
+    "loader_variables", "pagc_gaz", "pagc_lex", "pagc_rules", "place",
+    "place_lookup", "secondary_unit_lookup", "state", "state_lookup",
+    "street_type_lookup", "tabblock", "tabblock20", "tract", "zcta5",
+    "zip_lookup", "zip_lookup_all", "zip_lookup_base", "zip_state", "zip_state_loc",
+}
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    if type_ == "table" and name in EXCLUDE_TABLES:
+        return False
+    return True
+
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
@@ -29,6 +48,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -46,6 +66,7 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
+            include_object=include_object,
         )
 
         with context.begin_transaction():
