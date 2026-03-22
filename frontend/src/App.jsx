@@ -3,17 +3,7 @@ import Header from "./components/layout/Header";
 import MapPage from "./pages/MapPage";
 import DatabasePage from "./pages/DatabasePage";
 import IncidentPage from "./pages/IncidentPage";
-
-function Placeholder({ title }) {
-  return (
-    <div className="flex-1 flex items-center justify-center bg-gray-900 text-white">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold mb-2">{title}</h1>
-        <p className="text-gray-500">Coming in Phase {title === "Database" ? "3" : title === "Statistics" ? "4" : "—"}</p>
-      </div>
-    </div>
-  );
-}
+import StatsPage from "./pages/StatsPage";
 
 function About() {
   return (
@@ -55,7 +45,7 @@ export default function App() {
           <Route path="/" element={<MapPage />} />
           <Route path="/database" element={<DatabasePage />} />
           <Route path="/incidents/:id" element={<IncidentPage />} />
-          <Route path="/stats" element={<Placeholder title="Statistics" />} />
+          <Route path="/stats" element={<StatsPage />} />
           <Route path="/about" element={<About />} />
         </Routes>
       </div>
