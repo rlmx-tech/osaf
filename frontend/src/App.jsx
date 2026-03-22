@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Header from "./components/layout/Header";
 import MapPage from "./pages/MapPage";
+import DatabasePage from "./pages/DatabasePage";
+import IncidentPage from "./pages/IncidentPage";
 
 function Placeholder({ title }) {
   return (
@@ -51,7 +53,8 @@ export default function App() {
         <Header />
         <Routes>
           <Route path="/" element={<MapPage />} />
-          <Route path="/database" element={<Placeholder title="Database" />} />
+          <Route path="/database" element={<DatabasePage />} />
+          <Route path="/incidents/:id" element={<IncidentPage />} />
           <Route path="/stats" element={<Placeholder title="Statistics" />} />
           <Route path="/about" element={<About />} />
         </Routes>

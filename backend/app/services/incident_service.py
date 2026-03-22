@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from geoalchemy2.functions import ST_X, ST_Y
-from sqlalchemy import asc, desc, func, or_, select
+from sqlalchemy import asc, desc, func, literal_column, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -121,14 +121,22 @@ class IncidentService:
             query = query.where(Incident.verification_status == verification)
 
         if search:
-            pattern = f"%{search}%"
+            # Use PostgreSQL full-text search with fallback to ILIKE for case numbers
+            ts_vector = func.to_tsvector(
+                "english",
+                func.coalesce(Incident.location_description, "")
+                + " "
+                + func.coalesce(Incident.description, "")
+                + " "
+                + func.coalesce(Incident.country, "")
+                + " "
+                + func.coalesce(Incident.victim_name, ""),
+            )
+            ts_query = func.plainto_tsquery("english", search)
             query = query.where(
                 or_(
-                    Incident.location_description.ilike(pattern),
-                    Incident.description.ilike(pattern),
-                    Incident.country.ilike(pattern),
-                    Incident.victim_name.ilike(pattern),
-                    Incident.case_number.ilike(pattern),
+                    ts_vector.op("@@")(ts_query),
+                    Incident.case_number.ilike(f"%{search}%"),
                 )
             )
 
