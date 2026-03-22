@@ -4,6 +4,8 @@ import { useAuth } from "../api/useAuth";
 import client from "../api/client";
 import {
   CLASSIFICATION_LABELS,
+  REPORT_SOURCE_LABELS,
+  REPORT_PLATFORM_OPTIONS,
   SEVERITY_OPTIONS,
   ACTIVITY_OPTIONS,
 } from "../utils/constants";
@@ -29,6 +31,8 @@ export default function SubmitPage() {
     state_province: "",
     body_of_water: "",
     classification: "unprovoked",
+    report_source: "",
+    report_platform: "",
     victim_activity: "",
     victim_injury_severity: "",
     victim_name: "",
@@ -74,6 +78,8 @@ export default function SubmitPage() {
         victim_name: form.victim_name || null,
         victim_sex: form.victim_sex || null,
         shark_species_suspected: form.shark_species_suspected || null,
+        report_source: form.report_source || null,
+        report_platform: form.report_platform || null,
         sources: sources
           .filter((s) => s.source_url || s.source_title)
           .map((s) => ({
@@ -139,6 +145,37 @@ export default function SubmitPage() {
                 >
                   {Object.entries(CLASSIFICATION_LABELS).map(([k, v]) => (
                     <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Report Source</label>
+                <select
+                  name="report_source"
+                  value={form.report_source}
+                  onChange={handleChange}
+                  className="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-700 text-sm"
+                >
+                  <option value="">Unknown</option>
+                  {Object.entries(REPORT_SOURCE_LABELS).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Platform</label>
+                <select
+                  name="report_platform"
+                  value={form.report_platform}
+                  onChange={handleChange}
+                  className="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-700 text-sm"
+                >
+                  <option value="">N/A</option>
+                  {REPORT_PLATFORM_OPTIONS.map((p) => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
                   ))}
                 </select>
               </div>

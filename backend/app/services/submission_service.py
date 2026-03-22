@@ -45,6 +45,8 @@ class SubmissionService:
             classification=data.classification,
             classification_subtype=data.classification_subtype,
             provocation_subtype=data.provocation_subtype,
+            report_source=data.report_source,
+            report_platform=data.report_platform,
             shark_species_confirmed=data.shark_species_confirmed,
             shark_species_suspected=data.shark_species_suspected,
             shark_size_estimate=data.shark_size_estimate,

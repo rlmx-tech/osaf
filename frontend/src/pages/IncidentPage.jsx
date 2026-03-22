@@ -3,6 +3,8 @@ import { useIncident } from "../api/useIncidents";
 import {
   CLASSIFICATION_COLORS,
   CLASSIFICATION_LABELS,
+  REPORT_SOURCE_LABELS,
+  REPORT_PLATFORM_OPTIONS,
 } from "../utils/constants";
 import { formatDate, formatSpecies, formatCoordinates } from "../utils/formatters";
 
@@ -205,6 +207,19 @@ export default function IncidentPage() {
             value={incident.provocation_subtype}
           />
           <Field label="Date Precision" value={incident.date_precision} />
+          <Field
+            label="Report Source"
+            value={REPORT_SOURCE_LABELS[incident.report_source] || incident.report_source}
+          />
+          <Field
+            label="Report Platform"
+            value={
+              incident.report_platform
+                ? (REPORT_PLATFORM_OPTIONS.find((p) => p.value === incident.report_platform)?.label ||
+                   incident.report_platform)
+                : null
+            }
+          />
           <Field
             label="Verification Status"
             value={incident.verification_status}

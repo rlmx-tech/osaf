@@ -40,6 +40,8 @@ class IncidentBase(BaseModel):
     classification: str
     classification_subtype: str | None = None
     provocation_subtype: str | None = None
+    report_source: str | None = None
+    report_platform: str | None = None
     shark_species_confirmed: str | None = None
     shark_species_suspected: str | None = None
     shark_size_estimate: str | None = None
@@ -73,6 +75,8 @@ class IncidentUpdate(BaseModel):
     classification: str | None = None
     classification_subtype: str | None = None
     provocation_subtype: str | None = None
+    report_source: str | None = None
+    report_platform: str | None = None
     shark_species_confirmed: str | None = None
     shark_species_suspected: str | None = None
     shark_size_estimate: str | None = None
@@ -106,6 +110,8 @@ class IncidentResponse(BaseModel):
     classification: str
     classification_subtype: str | None = None
     provocation_subtype: str | None = None
+    report_source: str | None = None
+    report_platform: str | None = None
     shark_species_confirmed: str | None = None
     shark_species_suspected: str | None = None
     shark_size_estimate: str | None = None

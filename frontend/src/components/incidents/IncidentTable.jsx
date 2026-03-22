@@ -1,4 +1,4 @@
-import { CLASSIFICATION_COLORS, CLASSIFICATION_LABELS } from "../../utils/constants";
+import { CLASSIFICATION_COLORS, CLASSIFICATION_LABELS, REPORT_SOURCE_LABELS } from "../../utils/constants";
 import { formatDate, formatSpecies } from "../../utils/formatters";
 
 const COLUMNS = [
@@ -6,6 +6,7 @@ const COLUMNS = [
   { key: "incident_date", label: "Date", sortable: true },
   { key: "country", label: "Location", sortable: true },
   { key: "classification", label: "Type", sortable: true },
+  { key: "report_source", label: "Source", sortable: true },
   { key: "species", label: "Species", sortable: false },
   { key: "victim_activity", label: "Activity", sortable: true },
   { key: "fatal", label: "Fatal", sortable: true },
@@ -106,6 +107,9 @@ export default function IncidentTable({
                       incident.classification}
                   </span>
                 </span>
+              </td>
+              <td className="px-4 py-3 text-gray-400 text-xs">
+                {REPORT_SOURCE_LABELS[incident.report_source] || "—"}
               </td>
               <td className="px-4 py-3 text-gray-300">
                 {formatSpecies(

@@ -49,6 +49,10 @@ class Incident(Base):
     classification_subtype: Mapped[str | None] = mapped_column(String(20))
     provocation_subtype: Mapped[str | None] = mapped_column(String(20))
 
+    # Report source (two-axis model: what happened × how we found out)
+    report_source: Mapped[str | None] = mapped_column(String(20))
+    report_platform: Mapped[str | None] = mapped_column(String(30))
+
     # Shark
     shark_species_confirmed: Mapped[str | None] = mapped_column(String(100))
     shark_species_suspected: Mapped[str | None] = mapped_column(String(100))
@@ -104,8 +108,20 @@ class Incident(Base):
     __table_args__ = (
         CheckConstraint(
             "classification IN ('unprovoked', 'provoked', 'boat_bite', 'scavenge', "
-            "'aquaria', 'doubtful', 'no_assignment', 'not_confirmed')",
+            "'aquaria', 'doubtful', 'no_assignment', 'not_confirmed', "
+            "'sighting', 'near_miss', 'equipment_bite', 'unverified_report')",
             name="valid_classification",
+        ),
+        CheckConstraint(
+            "report_source IN ('isaf', 'news_media', 'social_media', 'government', 'community')"
+            " OR report_source IS NULL",
+            name="valid_report_source",
+        ),
+        CheckConstraint(
+            "report_platform IN ('twitter', 'reddit', 'instagram', 'youtube', "
+            "'facebook', 'tiktok', 'tv', 'print', 'radio', 'wire_service', 'other')"
+            " OR report_platform IS NULL",
+            name="valid_report_platform",
         ),
         CheckConstraint(
             "victim_injury_severity IN ('fatal', 'severe', 'moderate', 'minor', 'no_injury')"

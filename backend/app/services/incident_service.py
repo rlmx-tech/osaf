@@ -40,6 +40,8 @@ def _incident_to_response(incident: Incident) -> dict:
         "classification": incident.classification,
         "classification_subtype": incident.classification_subtype,
         "provocation_subtype": incident.provocation_subtype,
+        "report_source": incident.report_source,
+        "report_platform": incident.report_platform,
         "shark_species_confirmed": incident.shark_species_confirmed,
         "shark_species_suspected": incident.shark_species_suspected,
         "shark_size_estimate": incident.shark_size_estimate,
@@ -75,6 +77,7 @@ class IncidentService:
         activity: str | None = None,
         severity: str | None = None,
         verification: str | None = None,
+        report_source: str | None = None,
         search: str | None = None,
         sort: str = "incident_date",
         order: str = "desc",
@@ -119,6 +122,10 @@ class IncidentService:
 
         if verification:
             query = query.where(Incident.verification_status == verification)
+
+        if report_source:
+            values = [v.strip() for v in report_source.split(",")]
+            query = query.where(Incident.report_source.in_(values))
 
         if search:
             # Use PostgreSQL full-text search with fallback to ILIKE for case numbers
@@ -223,6 +230,8 @@ class IncidentService:
             classification=data.classification,
             classification_subtype=data.classification_subtype,
             provocation_subtype=data.provocation_subtype,
+            report_source=data.report_source,
+            report_platform=data.report_platform,
             shark_species_confirmed=data.shark_species_confirmed,
             shark_species_suspected=data.shark_species_suspected,
             shark_size_estimate=data.shark_size_estimate,

@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   CLASSIFICATION_COLORS,
   CLASSIFICATION_LABELS,
+  REPORT_SOURCE_LABELS,
   SEVERITY_OPTIONS,
   ACTIVITY_OPTIONS,
 } from "../../utils/constants";
@@ -179,6 +180,23 @@ export default function IncidentFilters({ filters, onFilterChange }) {
             <option key={act} value={act}>
               {act.charAt(0).toUpperCase() + act.slice(1)}
             </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Report Source */}
+      <div>
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
+          Report Source
+        </h4>
+        <select
+          value={filters.report_source || ""}
+          onChange={(e) => setFilter("report_source", e.target.value)}
+          className="bg-gray-800 text-white text-xs rounded px-2 py-1.5 w-full border border-gray-700"
+        >
+          <option value="">All sources</option>
+          {Object.entries(REPORT_SOURCE_LABELS).map(([k, v]) => (
+            <option key={k} value={k}>{v}</option>
           ))}
         </select>
       </div>
