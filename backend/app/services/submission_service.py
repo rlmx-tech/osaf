@@ -18,6 +18,9 @@ from app.utils.case_number import generate_case_number
 from app.utils.geo import point_from_coords
 
 
+VALID_ROLES: frozenset[str] = frozenset({"public", "verified_contributor", "admin"})
+
+
 class SubmissionService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -192,6 +195,12 @@ class SubmissionService:
         user = result.scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
+
+        if new_role not in VALID_ROLES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid role. Must be one of: {', '.join(sorted(VALID_ROLES))}",
+            )
 
         old_role = user.role
         user.role = new_role

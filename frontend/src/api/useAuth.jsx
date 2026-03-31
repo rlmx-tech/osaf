@@ -1,31 +1,12 @@
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useCallback } from "react";
 import client from "./client";
 
 const AuthContext = createContext(null);
 
-const STORAGE_KEY = "osaf_auth";
-
-function loadStored() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
 export function AuthProvider({ children }) {
-  const [auth, setAuth] = useState(() => loadStored());
-
-  // Set axios auth header when token changes
-  useEffect(() => {
-    if (auth?.access_token) {
-      client.defaults.headers.common["Authorization"] = `Bearer ${auth.access_token}`;
-    } else {
-      delete client.defaults.headers.common["Authorization"];
-    }
-  }, [auth]);
+  // Only user profile info is stored in state — the JWT lives in an httpOnly cookie
+  // and is never accessible to JavaScript.
+  const [user, setUser] = useState(null);
 
   const login = useCallback(async (username, password) => {
     const params = new URLSearchParams();
@@ -34,10 +15,8 @@ export function AuthProvider({ children }) {
     const res = await client.post("/auth/login", params, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
-    const data = res.data;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    setAuth(data);
-    return data;
+    setUser(res.data.user);
+    return res.data;
   }, []);
 
   const register = useCallback(async (userData) => {
@@ -45,18 +24,19 @@ export function AuthProvider({ children }) {
     return res.data;
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    setAuth(null);
-    delete client.defaults.headers.common["Authorization"];
+  const logout = useCallback(async () => {
+    try {
+      await client.post("/auth/logout");
+    } finally {
+      setUser(null);
+    }
   }, []);
 
   const value = {
-    user: auth?.user || null,
-    token: auth?.access_token || null,
-    isAuthenticated: !!auth?.access_token,
-    isAdmin: auth?.user?.role === "admin",
-    isContributor: auth?.user?.role === "verified_contributor" || auth?.user?.role === "admin",
+    user,
+    isAuthenticated: !!user,
+    isAdmin: user?.role === "admin",
+    isContributor: user?.role === "verified_contributor" || user?.role === "admin",
     login,
     register,
     logout,

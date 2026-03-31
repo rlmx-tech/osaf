@@ -1,8 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, Request, status
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy import select
@@ -13,7 +12,8 @@ from app.database import get_db
 from app.models.user import User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+COOKIE_NAME = "access_token"
 
 
 def hash_password(password: str) -> str:
@@ -34,11 +34,23 @@ def create_access_token(user_id: UUID, role: str) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
 
 
+def _extract_token(request: Request) -> str | None:
+    """Extract JWT from httpOnly cookie, falling back to Authorization header."""
+    token = request.cookies.get(COOKIE_NAME)
+    if token:
+        return token
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    return None
+
+
 async def get_current_user(
-    token: str | None = Depends(oauth2_scheme),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> User | None:
     """Returns the current user or None if no valid token."""
+    token = _extract_token(request)
     if token is None:
         return None
     try:

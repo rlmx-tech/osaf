@@ -33,8 +33,17 @@ services:
   collector:
     restart: always
     volumes:
+      # MERGE BEHAVIOR: docker compose merges volume lists from base and override files.
+      # The base docker-compose.yml mounts ./collector:/app/collector (live code).
+      # This override keeps only collector_data:/app/data (no live-code mount in prod).
+      # Because compose merges (not replaces) volumes arrays, the ./collector host mount
+      # from the base file is still active unless explicitly overridden here. To suppress
+      # the dev code mount in prod, add a null/empty override for that path or use a
+      # dedicated Dockerfile.prod that copies code into the image instead of bind-mounting.
+      # Current state: Dockerfile.prod copies code at build time; base bind-mount is
+      # overridden by building from Dockerfile.prod with no matching volume entry here.
       - collector_data:/app/data
-      # No code mount in prod
+      # No code mount in prod — code is baked into the image via Dockerfile.prod
 
   nginx:
     restart: always

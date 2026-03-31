@@ -8,6 +8,16 @@ import {
 } from "../utils/constants";
 import { formatDate, formatSpecies, formatCoordinates } from "../utils/formatters";
 
+function isSafeUrl(url) {
+  if (!url) return false;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 function Field({ label, value, className = "" }) {
   if (value === null || value === undefined || value === "") return null;
   return (
@@ -252,7 +262,7 @@ export default function IncidentPage() {
                       {source.source_date && ` — ${formatDate(source.source_date)}`}
                     </p>
                   )}
-                  {source.source_url && (
+                  {isSafeUrl(source.source_url) && (
                     <a
                       href={source.source_url}
                       target="_blank"

@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: str = "http://localhost:3000"
 
+    # Environment: "development" disables cookie Secure flag and OpenAPI gate
+    app_env: str = "production"
+
     @property
     def database_url(self) -> str:
         return (
