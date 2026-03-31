@@ -40,14 +40,26 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
+    depends_on:
+      - backend
+
+  collector:
+    build: ./collector
+    restart: unless-stopped
     environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api/v1}
-    ports:
-      - "3000:3000"
+      COLLECTOR_OSAF_API_URL: http://backend:8000/api/v1
+      COLLECTOR_OSAF_USERNAME: ${COLLECTOR_USERNAME:-collector}
+      COLLECTOR_OSAF_PASSWORD: ${COLLECTOR_PASSWORD:?Set COLLECTOR_PASSWORD in .env}
+      COLLECTOR_OLLAMA_URL: ${COLLECTOR_OLLAMA_URL:-https://api.ollama.com}
+      COLLECTOR_OLLAMA_API_KEY: ${COLLECTOR_OLLAMA_API_KEY:-}
+      COLLECTOR_OLLAMA_MODEL: ${COLLECTOR_OLLAMA_MODEL:-qwen3-coder:480b}
+      COLLECTOR_REDDIT_CLIENT_ID: ${COLLECTOR_REDDIT_CLIENT_ID:-}
+      COLLECTOR_REDDIT_CLIENT_SECRET: ${COLLECTOR_REDDIT_CLIENT_SECRET:-}
     depends_on:
       - backend
     volumes:
-      - ./frontend/src:/app/src
+      - collector_data:/app/data
+      - ./collector:/app/collector
 
   nginx:
     image: nginx:alpine
@@ -62,3 +74,4 @@ services:
 
 volumes:
   pgdata:
+  collector_data:
