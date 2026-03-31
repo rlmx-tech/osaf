@@ -4,12 +4,14 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.user import User
 from app.schemas.incident import (
     IncidentCreate,
     IncidentResponse,
     IncidentUpdate,
     PaginatedIncidentResponse,
 )
+from app.services.auth_service import require_role
 from app.services.incident_service import IncidentService
 
 router = APIRouter()
@@ -66,6 +68,7 @@ async def get_incident(
 @router.post("", response_model=IncidentResponse, status_code=201)
 async def create_incident(
     data: IncidentCreate,
+    user: User = Depends(require_role("admin", "verified_contributor")),
     db: AsyncSession = Depends(get_db),
 ):
     service = IncidentService(db)
@@ -76,6 +79,7 @@ async def create_incident(
 async def update_incident(
     incident_id: UUID,
     data: IncidentUpdate,
+    user: User = Depends(require_role("admin", "verified_contributor")),
     db: AsyncSession = Depends(get_db),
 ):
     service = IncidentService(db)
@@ -85,6 +89,7 @@ async def update_incident(
 @router.delete("/{incident_id}", status_code=204)
 async def delete_incident(
     incident_id: UUID,
+    user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     service = IncidentService(db)

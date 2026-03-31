@@ -1,9 +1,11 @@
 import { Popup } from "react-leaflet";
+import { Link } from "react-router-dom";
 import { CLASSIFICATION_LABELS } from "../../utils/constants";
 import { formatDate, formatSpecies } from "../../utils/formatters";
 
 export default function IncidentPopup({ properties }) {
   const {
+    id,
     case_number,
     incident_date,
     classification,
@@ -63,6 +65,13 @@ export default function IncidentPopup({ properties }) {
             </div>
           )}
         </div>
+
+        <Link
+          to={`/incidents/${id}`}
+          className="block mt-2 text-center text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+        >
+          View Full Details →
+        </Link>
       </div>
     </Popup>
   );

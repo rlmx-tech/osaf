@@ -161,7 +161,7 @@ export default function MapFilters({ filters, onFilterChange }) {
 
           {/* Clear filters */}
           <button
-            onClick={() => onFilterChange({})}
+            onClick={() => onFilterChange({ date_from: `${new Date().getFullYear()}-01-01` })}
             className="text-xs text-gray-400 hover:text-white w-full text-center py-1"
           >
             Clear all filters

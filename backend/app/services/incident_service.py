@@ -20,6 +20,11 @@ from app.schemas.incident import (
 from app.utils.case_number import generate_case_number
 from app.utils.geo import point_from_coords
 
+ALLOWED_SORT_FIELDS = {
+    "incident_date", "case_number", "country", "classification",
+    "victim_injury_severity", "fatal", "submitted_at", "updated_at",
+}
+
 
 def _incident_to_response(incident: Incident) -> dict:
     """Convert an Incident ORM object to a response dict with extracted coordinates."""
@@ -152,6 +157,8 @@ class IncidentService:
         total = (await self.db.execute(count_query)).scalar_one()
 
         # Sort
+        if sort not in ALLOWED_SORT_FIELDS:
+            sort = "incident_date"
         sort_column = getattr(Incident, sort, Incident.incident_date)
         order_func = desc if order == "desc" else asc
         query = query.order_by(order_func(sort_column))

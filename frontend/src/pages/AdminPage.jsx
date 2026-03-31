@@ -9,6 +9,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState("queue");
   const [submissions, setSubmissions] = useState(null);
   const [auditLog, setAuditLog] = useState(null);
+  const [users, setUsers] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
@@ -39,10 +40,36 @@ export default function AdminPage() {
     }
   }, []);
 
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await client.get("/admin/users");
+      setUsers(res.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to load users");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (tab === "queue") fetchQueue();
     if (tab === "audit") fetchAuditLog();
-  }, [tab, fetchQueue, fetchAuditLog]);
+    if (tab === "users") fetchUsers();
+  }, [tab, fetchQueue, fetchAuditLog, fetchUsers]);
+
+  const handleRoleChange = async (userId, newRole) => {
+    setActionLoading(userId);
+    try {
+      await client.put(`/admin/users/${userId}/role`, { role: newRole });
+      fetchUsers();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to update role");
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const handleAction = async (id, action) => {
     setActionLoading(id);
@@ -65,6 +92,7 @@ export default function AdminPage() {
         <div className="flex gap-1 mb-6 border-b border-gray-700">
           {[
             { key: "queue", label: "Review Queue" },
+            { key: "users", label: "Users" },
             { key: "audit", label: "Audit Log" },
           ].map((t) => (
             <button
@@ -176,6 +204,79 @@ export default function AdminPage() {
               </div>
             )}
           </>
+        )}
+
+        {/* Users */}
+        {!loading && tab === "users" && users && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-400 text-xs uppercase tracking-wider border-b border-gray-700">
+                  <th className="pb-2 pr-4">Username</th>
+                  <th className="pb-2 pr-4">Email</th>
+                  <th className="pb-2 pr-4">Role</th>
+                  <th className="pb-2 pr-4">Status</th>
+                  <th className="pb-2 pr-4">Joined</th>
+                  <th className="pb-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {users.data.map((user) => (
+                  <tr key={user.id} className="hover:bg-gray-800/50">
+                    <td className="py-3 pr-4">
+                      <span className="font-medium">{user.username}</span>
+                      {user.display_name && (
+                        <span className="text-gray-500 ml-1 text-xs">({user.display_name})</span>
+                      )}
+                    </td>
+                    <td className="py-3 pr-4 text-gray-400">{user.email}</td>
+                    <td className="py-3 pr-4">
+                      <span
+                        className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                          user.role === "admin"
+                            ? "bg-purple-900/30 text-purple-400"
+                            : user.role === "verified_contributor"
+                              ? "bg-green-900/30 text-green-400"
+                              : "bg-gray-700 text-gray-300"
+                        }`}
+                      >
+                        {user.role === "verified_contributor" ? "Verified" : user.role}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span
+                        className={`w-2 h-2 rounded-full inline-block ${
+                          user.is_active ? "bg-green-500" : "bg-red-500"
+                        }`}
+                      />
+                    </td>
+                    <td className="py-3 pr-4 text-gray-500 text-xs">
+                      {user.created_at
+                        ? new Date(user.created_at).toLocaleDateString()
+                        : "—"}
+                    </td>
+                    <td className="py-3">
+                      <select
+                        value={user.role}
+                        onChange={(e) => handleRoleChange(user.id, e.target.value)}
+                        disabled={actionLoading === user.id}
+                        className="bg-gray-700 text-white text-xs rounded px-2 py-1 border border-gray-600 disabled:opacity-50"
+                      >
+                        <option value="public">Public</option>
+                        <option value="verified_contributor">Verified Contributor</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {users.meta && (
+              <p className="text-xs text-gray-500 mt-3">
+                {users.meta.total} total users
+              </p>
+            )}
+          </div>
         )}
 
         {/* Audit Log */}
