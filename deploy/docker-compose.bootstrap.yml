@@ -1,0 +1,13 @@
+# Bootstrap override — mounts the HTTP-only nginx config + certbot webroot.
+# Used only during first-time deployment before TLS certs exist.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f deploy/docker-compose.bootstrap.yml up -d
+services:
+  nginx:
+    volumes:
+      - ./nginx/nginx.bootstrap.conf:/etc/nginx/conf.d/default.conf:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    ports:
+      - "80:80"
+      # No 443 during bootstrap — cert doesn't exist yet
