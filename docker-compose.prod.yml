@@ -1,0 +1,45 @@
+# Production overrides for Hera deployment (osaf.net)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  db:
+    restart: always
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  backend:
+    restart: always
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    environment:
+      CORS_ORIGINS: https://osaf.net,https://www.osaf.net
+    volumes: []  # No code mount in prod
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  frontend:
+    restart: always
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: /api/v1
+
+  collector:
+    restart: always
+    volumes:
+      - collector_data:/app/data
+      # No code mount in prod
+
+  nginx:
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
