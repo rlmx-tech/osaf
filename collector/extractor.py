@@ -1,8 +1,11 @@
 """Ollama-powered extraction and verification pipeline.
 
-Uses qwen2.5-coder:32b on the local Ollama instance (Mars) to:
+Uses glm-5.2:cloud on Ollama Cloud (configurable via COLLECTOR_OLLAMA_MODEL) to:
 1. Extract structured incident data from raw text
 2. Verify extracted data for consistency and accuracy
+
+A general instruction-following model is used (not a code model) because the
+task is structured extraction from prose news/social text, not code generation.
 """
 
 import json
@@ -210,6 +213,10 @@ async def _call_ollama(prompt: str) -> str | None:
                     "model": settings.ollama_model,
                     "prompt": prompt,
                     "stream": False,
+                    # Disable reasoning output: glm-5.2 and other thinking-capable
+                    # models would otherwise spend the num_predict budget on
+                    # <think> blocks and risk truncating/contaminating the JSON.
+                    "think": False,
                     "options": {
                         "temperature": 0.1,
                         "num_predict": 2048,

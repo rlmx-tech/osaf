@@ -13,9 +13,9 @@ class Settings(BaseSettings):
     osaf_password: str  # required — no default
 
     # Ollama
-    ollama_url: str = "https://api.ollama.com"
+    ollama_url: str = "https://ollama.com"
     ollama_api_key: str = ""  # Bearer token for Ollama Cloud; empty = no auth (local)
-    ollama_model: str = "qwen3-coder:480b"
+    ollama_model: str = "glm-5.2:cloud"
     ollama_timeout: int = 300
 
     # Reddit (asyncpraw)

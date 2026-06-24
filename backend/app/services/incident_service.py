@@ -1,4 +1,5 @@
 import math
+import re
 from datetime import date
 from uuid import UUID
 
@@ -133,6 +134,8 @@ class IncidentService:
             query = query.where(Incident.report_source.in_(values))
 
         if search:
+            # Escape ILIKE metacharacters so user input is treated as literal text
+            safe_search = re.sub(r"([%_\\])", r"\\\1", search)
             # Use PostgreSQL full-text search with fallback to ILIKE for case numbers
             ts_vector = func.to_tsvector(
                 "english",
@@ -148,7 +151,7 @@ class IncidentService:
             query = query.where(
                 or_(
                     ts_vector.op("@@")(ts_query),
-                    Incident.case_number.ilike(f"%{search}%"),
+                    Incident.case_number.ilike(f"%{safe_search}%"),
                 )
             )
 

@@ -29,7 +29,7 @@ async def list_incidents(
     severity: str | None = Query(None, description="Comma-separated severities"),
     verification: str | None = Query(None, description="Verification status"),
     report_source: str | None = Query(None, description="Comma-separated report sources"),
-    search: str | None = Query(None, description="Full-text search"),
+    search: str | None = Query(None, max_length=200, description="Full-text search"),
     sort: str = Query("incident_date", description="Sort field"),
     order: str = Query("desc", description="Sort order: asc or desc"),
     page: int = Query(1, ge=1, description="Page number"),

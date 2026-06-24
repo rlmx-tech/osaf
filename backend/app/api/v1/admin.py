@@ -1,7 +1,7 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -11,13 +11,15 @@ from app.services.submission_service import SubmissionService
 
 router = APIRouter()
 
+_VALID_ROLES = frozenset({"admin", "verified_contributor", "public"})
+
 
 class ReviewAction(BaseModel):
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class RoleUpdate(BaseModel):
-    role: str
+    role: str = Field(..., max_length=30)
 
 
 @router.get("/submissions")
@@ -93,6 +95,8 @@ async def update_user_role(
     admin: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
+    if body.role not in _VALID_ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {sorted(_VALID_ROLES)}")
     service = SubmissionService(db)
     return await service.update_user_role(user_id, body.role, admin)
 
