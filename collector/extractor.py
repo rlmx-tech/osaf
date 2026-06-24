@@ -17,6 +17,7 @@ import httpx
 
 from collector.config import (
     COMMON_TO_SCIENTIFIC,
+    COUNTRY_ALIASES,
     VALID_ACTIVITIES,
     VALID_CLASSIFICATIONS,
     VALID_REPORT_SOURCES,
@@ -155,17 +156,33 @@ def _normalize_species(species_text: str | None) -> str | None:
     return species_text
 
 
+def _normalize_country(country: str | None) -> str | None:
+    """Map common country-name variants to their canonical form."""
+    if not country:
+        return None
+    stripped = country.strip()
+    return COUNTRY_ALIASES.get(stripped.lower(), stripped)
+
+
 def _validate_field(value: str | None, valid_options: list[str]) -> str | None:
-    """Validate a field value against allowed options."""
+    """Validate a field value against allowed options.
+
+    Exact match wins first. Only then do we fall back to matching an option as
+    a substring of a longer phrase (e.g. "severe injuries" -> "severe"). The
+    reverse direction (value as substring of an option) is intentionally NOT
+    used: it would mis-map "provoked" onto "unprovoked".
+    """
     if not value:
         return None
     lower = value.lower().strip().replace(" ", "_")
     if lower in valid_options:
         return lower
-    # Fuzzy match
-    for opt in valid_options:
-        if opt in lower or lower in opt:
-            return opt
+    # Option appears as a substring of the (longer) value phrase.
+    matches = [opt for opt in valid_options if opt in lower]
+    if matches:
+        # Prefer the most specific (longest) match when several apply, e.g.
+        # "unprovoked_attack" contains both "provoked" and "unprovoked".
+        return max(matches, key=len)
     return None
 
 
@@ -284,7 +301,7 @@ async def extract_incident(raw: RawItem) -> ExtractedIncident | None:
 
     # Geocode location via Nominatim (accurate coastline coordinates)
     location_desc = data.get("location_description", raw.title)
-    country = data.get("country", "Unknown")
+    country = _normalize_country(data.get("country")) or "Unknown"
     state_province = data.get("state_province")
     body_of_water = data.get("body_of_water")
 

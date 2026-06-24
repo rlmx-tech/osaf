@@ -208,6 +208,28 @@ VALID_ACTIVITIES = [
 
 VALID_REPORT_SOURCES = ["isaf", "news_media", "social_media", "government", "community"]
 
+# Canonical country names (match backend seed data + frontend filters).
+# Maps common LLM variants -> the canonical form so stats/filters don't fragment
+# (e.g. "USA" and "United States" counting as two separate countries).
+COUNTRY_ALIASES = {
+    "usa": "United States",
+    "us": "United States",
+    "u.s.": "United States",
+    "u.s.a.": "United States",
+    "america": "United States",
+    "united states of america": "United States",
+    "uk": "United Kingdom",
+    "u.k.": "United Kingdom",
+    "great britain": "United Kingdom",
+    "england": "United Kingdom",
+    "scotland": "United Kingdom",
+    "wales": "United Kingdom",
+    "uae": "United Arab Emirates",
+    "rsa": "South Africa",
+    "nz": "New Zealand",
+    "png": "Papua New Guinea",
+}
+
 COMMON_TO_SCIENTIFIC = {
     "great white": "Carcharodon carcharias",
     "white shark": "Carcharodon carcharias",
