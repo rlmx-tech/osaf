@@ -8,6 +8,18 @@ class StatsService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    @staticmethod
+    def _species_label():
+        """Species for aggregation: confirmed if present, else suspected.
+
+        The collector populates shark_species_suspected; shark_species_confirmed
+        is rarely set. Coalescing prevents species stats from reflecting only the
+        handful of confirmed records.
+        """
+        return func.coalesce(
+            Incident.shark_species_confirmed, Incident.shark_species_suspected
+        )
+
     async def overview(self) -> dict:
         total = (await self.db.execute(
             select(func.count()).select_from(Incident)
@@ -24,10 +36,11 @@ class StatsService:
             .limit(1)
         )).scalar_one_or_none()
 
+        species_label = self._species_label()
         top_species = (await self.db.execute(
-            select(Incident.shark_species_confirmed)
-            .where(Incident.shark_species_confirmed.is_not(None))
-            .group_by(Incident.shark_species_confirmed)
+            select(species_label)
+            .where(species_label.is_not(None))
+            .group_by(species_label)
             .order_by(func.count().desc())
             .limit(1)
         )).scalar_one_or_none()
@@ -94,13 +107,14 @@ class StatsService:
         }
 
     async def by_species(self) -> dict:
+        species_label = self._species_label()
         result = await self.db.execute(
             select(
-                Incident.shark_species_confirmed.label("species"),
+                species_label.label("species"),
                 func.count().label("count"),
             )
-            .where(Incident.shark_species_confirmed.is_not(None))
-            .group_by(Incident.shark_species_confirmed)
+            .where(species_label.is_not(None))
+            .group_by(species_label)
             .order_by(func.count().desc())
             .limit(15)
         )

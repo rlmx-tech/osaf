@@ -164,6 +164,20 @@ class TestBySpecies:
         assert result["data"][0] == {"species": "Carcharodon carcharias", "count": 88}
 
 
+class TestSpeciesLabel:
+    def test_species_coalesces_confirmed_then_suspected(self):
+        # Species aggregation must fall back to the suspected column (what the
+        # collector populates), not only the rarely-set confirmed column.
+        sql = str(
+            StatsService._species_label().compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        ).lower()
+        assert "coalesce" in sql
+        assert "shark_species_confirmed" in sql
+        assert "shark_species_suspected" in sql
+
+
 class TestByActivity:
     async def test_empty_returns_empty_list(self):
         db = AsyncMock()
