@@ -26,7 +26,11 @@ const CustomTooltip = ({ active, payload, label }) => {
 export default function AttacksByCountry({ data }) {
   if (!data || data.length === 0) return null;
 
-  const chartData = data.map((d) => ({
+  // API returns countries sorted by count desc, and recharts renders data[0] at
+  // the top of a vertical axis. Show the top 10 so every bar gets a label —
+  // rendering all 20 in this height makes recharts thin the labels and skip the
+  // #1 country (United States), making #2 (Australia) look like #1.
+  const chartData = data.slice(0, 10).map((d) => ({
     country: d.country,
     "Non-Fatal": d.count - d.fatal,
     Fatal: d.fatal,
@@ -47,6 +51,7 @@ export default function AttacksByCountry({ data }) {
             stroke="#9ca3af"
             fontSize={11}
             width={120}
+            interval={0}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend wrapperStyle={{ fontSize: "12px", color: "#9ca3af" }} />
