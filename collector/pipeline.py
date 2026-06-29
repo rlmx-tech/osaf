@@ -3,11 +3,19 @@
 import logging
 
 from collector.extractor import apply_corrections, extract_incident, verify_incident
-from collector.models import RawItem
+from collector.models import ExtractedIncident, RawItem
 from collector.state import StateManager
 from collector.submitter import OsafSubmitter
 
 logger = logging.getLogger(__name__)
+
+
+def derive_event_type(incident: "ExtractedIncident | None") -> str:
+    """Map an extraction result to a news_items.event_type value."""
+    if incident is None:
+        return "news"
+    return "sighting" if incident.classification == "sighting" else "attack"
+
 
 # Minimum confidence threshold to submit
 MIN_EXTRACTION_CONFIDENCE = 0.4
