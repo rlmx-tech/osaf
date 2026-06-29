@@ -1,6 +1,6 @@
 import math
 
-from sqlalchemy import desc, func, literal_column, or_, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,43 +21,38 @@ class NewsService:
             )
             promoted_id = res.scalar_one_or_none()
 
-        # Check if the row already exists
-        existing = await self.db.execute(
-            select(NewsItem).where(NewsItem.dedup_key == data.dedup_key)
+        values = {
+            "dedup_key": data.dedup_key,
+            "source_platform": data.source_platform,
+            "source_name": data.source_name,
+            "source_url": data.source_url,
+            "title": data.title,
+            "summary": data.summary,
+            "author": data.author,
+            "image_url": data.image_url,
+            "published_at": data.published_at,
+            "event_type": data.event_type,
+            "country": data.country,
+            "ai_confidence": data.ai_confidence,
+            "promoted_incident_id": promoted_id,
+        }
+        stmt = pg_insert(NewsItem).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["dedup_key"],
+            set_={
+                "event_type": stmt.excluded.event_type,
+                "country": stmt.excluded.country,
+                "ai_confidence": stmt.excluded.ai_confidence,
+                "promoted_incident_id": stmt.excluded.promoted_incident_id,
+            },
+        ).returning(NewsItem.id)
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        new_id = result.scalar_one()
+        row = await self.db.execute(
+            select(NewsItem).where(NewsItem.id == new_id).execution_options(populate_existing=True)
         )
-        existing_item = existing.scalar_one_or_none()
-
-        if existing_item:
-            # Update existing row
-            existing_item.event_type = data.event_type
-            existing_item.country = data.country
-            existing_item.ai_confidence = data.ai_confidence
-            existing_item.promoted_incident_id = promoted_id
-            self.db.add(existing_item)
-            await self.db.commit()
-            await self.db.refresh(existing_item)
-            return existing_item
-        else:
-            # Insert new row
-            new_item = NewsItem(
-                dedup_key=data.dedup_key,
-                source_platform=data.source_platform,
-                source_name=data.source_name,
-                source_url=data.source_url,
-                title=data.title,
-                summary=data.summary,
-                author=data.author,
-                image_url=data.image_url,
-                published_at=data.published_at,
-                event_type=data.event_type,
-                country=data.country,
-                ai_confidence=data.ai_confidence,
-                promoted_incident_id=promoted_id,
-            )
-            self.db.add(new_item)
-            await self.db.commit()
-            await self.db.refresh(new_item)
-            return new_item
+        return row.scalar_one()
 
     async def list_news(
         self,

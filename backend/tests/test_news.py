@@ -81,3 +81,17 @@ async def test_service_list_filters_by_event_type(db):
     only_sightings = await svc.list_news(event_type="sighting")
     assert only_sightings.meta.total == 1
     assert only_sightings.data[0].event_type == "sighting"
+
+
+@pytest.mark.asyncio
+async def test_service_list_filters_by_csv_event_type(db):
+    from app.schemas.news import NewsItemCreate
+    from app.services.news_service import NewsService
+    svc = NewsService(db)
+    for i, et in enumerate(["sighting", "attack"]):
+        await svc.upsert(NewsItemCreate(
+            dedup_key=f"reddit:https://csv/{i}", source_platform="reddit",
+            source_name="C", source_url=f"https://csv/{i}", title=f"shark csv {i}", event_type=et,
+        ))
+    multi = await svc.list_news(event_type="sighting,attack")
+    assert multi.meta.total == 2
