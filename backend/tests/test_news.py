@@ -95,3 +95,31 @@ async def test_service_list_filters_by_csv_event_type(db):
         ))
     multi = await svc.list_news(event_type="sighting,attack")
     assert multi.meta.total == 2
+
+
+@pytest.mark.asyncio
+async def test_post_news_requires_auth(client):
+    resp = await client.post("/api/v1/news", json={
+        "dedup_key": "youtube:https://z/1", "source_platform": "youtube",
+        "source_name": "C", "source_url": "https://z/1", "title": "shark",
+    })
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_post_news_as_verified_and_list_public(client, verified_user):
+    from tests.conftest import auth_header
+    payload = {
+        "dedup_key": "youtube:https://z/2", "source_platform": "youtube",
+        "source_name": "C", "source_url": "https://z/2", "title": "shark sighting",
+        "event_type": "sighting",
+    }
+    created = await client.post("/api/v1/news", json=payload, headers=auth_header(verified_user))
+    assert created.status_code == 201
+    assert created.json()["event_type"] == "sighting"
+
+    listed = await client.get("/api/v1/news?event_type=sighting")
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["meta"]["total"] == 1
+    assert body["data"][0]["dedup_key"] == "youtube:https://z/2"
