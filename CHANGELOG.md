@@ -41,6 +41,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Shark News capture + AI auto-promotion of sightings & attacks (SP1).** New
+  additive `news_items` table captures *every* shark-relevant item the collector
+  finds, so nothing is silently dropped at the old relevance gate (the original
+  motivation: missed sightings). The collector pipeline is now two-tier — a cheap
+  keyword gate (`collector/relevance.py`) decides what gets captured into
+  `news_items`, then the existing AI extractor decides what gets promoted; results
+  are tagged `attack` / `sighting` / `news` (`derive_event_type`). Sightings are
+  tracked as first-class data: an `incidents` row with `classification='sighting'`
+  (no schema change — already legal). Promoted records auto-publish (the `collector`
+  user becomes a `verified_contributor`; `backend/scripts/promote_collector.py`).
+  New endpoints: public `GET /api/v1/news` (filters + pagination) and
+  contributor-only `POST /api/v1/news` (idempotent upsert via `ON CONFLICT`,
+  resolving `promoted_case_number` → `promoted_incident_id`). Backend:
+  `app/models/news.py`, `app/schemas/news.py`, `app/services/news_service.py`,
+  `app/api/v1/news.py`, migration `d4e5f6a1b2c3`. Collector: `relevance.py`,
+  `news_client.py`, rewritten `pipeline.py`. Design + plan:
+  `docs/superpowers/specs/2026-06-28-osaf-shark-news-sightings-backend-design.md`,
+  `docs/superpowers/plans/2026-06-28-osaf-shark-news-sightings-backend.md`.
+  This is the backend half; the public Shark News feed page is SP2.
+
 - **Map — coastline snapping for vague-location incidents.** Incidents located
   only to a country/region geocoded to the inland country centroid (e.g. a "South
   Africa" pin in the interior). New `collector/coastline.py` snaps such points to
