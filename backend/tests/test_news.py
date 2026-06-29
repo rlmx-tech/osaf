@@ -33,3 +33,51 @@ def test_news_schemas_importable_and_defaults():
     assert c.event_type == "news"
     assert c.promoted_case_number is None
     assert PaginatedNewsResponse(data=[], meta={"total": 0, "page": 1, "per_page": 50, "pages": 0}).meta.total == 0
+
+
+@pytest.mark.asyncio
+async def test_service_upsert_idempotent(db):
+    from app.schemas.news import NewsItemCreate
+    from app.services.news_service import NewsService
+    svc = NewsService(db)
+    payload = NewsItemCreate(
+        dedup_key="reddit:https://r/1", source_platform="reddit",
+        source_name="r/sharks", source_url="https://r/1", title="White shark spotted",
+    )
+    first = await svc.upsert(payload)
+    payload2 = payload.model_copy(update={"event_type": "sighting", "country": "Australia"})
+    second = await svc.upsert(payload2)
+    assert first.id == second.id
+    listed = await svc.list_news()
+    assert listed.meta.total == 1
+    assert listed.data[0].event_type == "sighting"
+    assert listed.data[0].country == "Australia"
+
+
+@pytest.mark.asyncio
+async def test_service_upsert_resolves_promoted_case_number(db, sample_incident):
+    from app.schemas.news import NewsItemCreate
+    from app.services.news_service import NewsService
+    svc = NewsService(db)
+    payload = NewsItemCreate(
+        dedup_key="news_rss:https://n/9", source_platform="news_rss",
+        source_name="GN", source_url="https://n/9", title="Shark attack reported",
+        event_type="attack", promoted_case_number=sample_incident.case_number,
+    )
+    row = await svc.upsert(payload)
+    assert row.promoted_incident_id == sample_incident.id
+
+
+@pytest.mark.asyncio
+async def test_service_list_filters_by_event_type(db):
+    from app.schemas.news import NewsItemCreate
+    from app.services.news_service import NewsService
+    svc = NewsService(db)
+    for i, et in enumerate(["news", "sighting", "attack"]):
+        await svc.upsert(NewsItemCreate(
+            dedup_key=f"youtube:https://y/{i}", source_platform="youtube",
+            source_name="C", source_url=f"https://y/{i}", title=f"shark {i}", event_type=et,
+        ))
+    only_sightings = await svc.list_news(event_type="sighting")
+    assert only_sightings.meta.total == 1
+    assert only_sightings.data[0].event_type == "sighting"
