@@ -8,7 +8,7 @@ from collector.config import COMMON_TO_SCIENTIFIC
 
 # "shark" plus every species common name (mako, wobbegong, thresher, etc. lack "shark")
 SHARK_RELEVANCE_TERMS: frozenset[str] = frozenset(
-    {"shark", *COMMON_TO_SCIENTIFIC.keys()}
+    {"shark", *(k.lower() for k in COMMON_TO_SCIENTIFIC.keys())}
 )
 
 
