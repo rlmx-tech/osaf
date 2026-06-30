@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,7 +15,7 @@ class NewsItemCreate(BaseModel):
     author: str | None = Field(None, max_length=200)
     image_url: str | None = None
     published_at: datetime | None = None
-    event_type: str = Field("news", max_length=20)
+    event_type: Literal["attack", "sighting", "news"] = "news"
     country: str | None = Field(None, max_length=100)
     ai_confidence: float | None = None
     promoted_case_number: str | None = Field(None, max_length=20)

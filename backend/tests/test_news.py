@@ -123,3 +123,36 @@ async def test_post_news_as_verified_and_list_public(client, verified_user):
     body = listed.json()
     assert body["meta"]["total"] == 1
     assert body["data"][0]["dedup_key"] == "youtube:https://z/2"
+
+
+@pytest.mark.asyncio
+async def test_post_news_rejects_invalid_event_type(client, verified_user):
+    """Final-review fix #2: event_type is a Literal -> bad value is 422, not a DB 500."""
+    from tests.conftest import auth_header
+    payload = {
+        "dedup_key": "youtube:https://z/bad", "source_platform": "youtube",
+        "source_name": "C", "source_url": "https://z/bad", "title": "shark",
+        "event_type": "foo",
+    }
+    resp = await client.post("/api/v1/news", json=payload, headers=auth_header(verified_user))
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_news_search_escapes_wildcards(db):
+    """Final-review fix #1: ILIKE metacharacters in search are escaped, not treated as wildcards."""
+    from app.schemas.news import NewsItemCreate
+    from app.services.news_service import NewsService
+    svc = NewsService(db)
+    await svc.upsert(NewsItemCreate(
+        dedup_key="news_rss:https://s/1", source_platform="news_rss",
+        source_name="N", source_url="https://s/1", title="100% shark danger",
+    ))
+    await svc.upsert(NewsItemCreate(
+        dedup_key="news_rss:https://s/2", source_platform="news_rss",
+        source_name="N", source_url="https://s/2", title="shark sighting",
+    ))
+    # "100%" must match only the literal-"100%" row, not act as a wildcard matching both.
+    result = await svc.list_news(search="100%")
+    assert result.meta.total == 1
+    assert result.data[0].dedup_key == "news_rss:https://s/1"

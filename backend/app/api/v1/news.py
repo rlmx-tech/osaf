@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,8 +17,8 @@ async def list_news(
     event_type: str | None = Query(None, description="Comma-separated event types"),
     country: str | None = Query(None, description="Comma-separated countries"),
     source_platform: str | None = Query(None, description="Comma-separated platforms"),
-    date_from: str | None = Query(None, description="Captured from (ISO)"),
-    date_to: str | None = Query(None, description="Captured to (ISO)"),
+    date_from: date | None = Query(None, description="Captured from (ISO date)"),
+    date_to: date | None = Query(None, description="Captured to (ISO date)"),
     search: str | None = Query(None, max_length=200),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),

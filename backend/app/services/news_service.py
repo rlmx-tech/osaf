@@ -1,4 +1,6 @@
 import math
+import re
+from datetime import date
 
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -59,8 +61,8 @@ class NewsService:
         event_type: str | None = None,
         country: str | None = None,
         source_platform: str | None = None,
-        date_from: str | None = None,
-        date_to: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
         search: str | None = None,
         page: int = 1,
         per_page: int = 50,
@@ -77,7 +79,8 @@ class NewsService:
         if date_to:
             query = query.where(NewsItem.captured_at <= date_to)
         if search:
-            like = f"%{search}%"
+            safe_search = re.sub(r"([%_\\])", r"\\\1", search)
+            like = f"%{safe_search}%"
             query = query.where(or_(NewsItem.title.ilike(like), NewsItem.summary.ilike(like)))
 
         total = (await self.db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
