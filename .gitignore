@@ -46,3 +46,4 @@ frontend/dist/
 
 # Playwright MCP scratch artifacts
 .playwright-mcp/
+.gstack/

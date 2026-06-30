@@ -39,7 +39,14 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
-    model_config = {"env_prefix": "", "case_sensitive": False}
+    model_config = {
+        "env_prefix": "",
+        "case_sensitive": False,
+        # Load local dev settings from backend/.env. OS environment variables
+        # still take precedence (e.g. Docker Compose), so this is a no-op in prod.
+        "env_file": ".env",
+        "extra": "ignore",
+    }
 
 
 settings = Settings()

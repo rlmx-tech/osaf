@@ -48,6 +48,7 @@ async def cleanup_db():
     yield
     async with async_session() as session:
         # Delete in reverse dependency order
+        await session.execute(text("DELETE FROM news_items"))
         await session.execute(text("DELETE FROM incident_audit_log"))
         await session.execute(text("DELETE FROM incident_sources"))
         await session.execute(text("DELETE FROM incidents"))
