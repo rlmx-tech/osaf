@@ -35,3 +35,19 @@ export function formatCoordinates(lon, lat) {
   const lonDir = lon >= 0 ? "E" : "W";
   return `${Math.abs(lat).toFixed(4)}°${latDir}, ${Math.abs(lon).toFixed(4)}°${lonDir}`;
 }
+
+export function relativeTime(dateStr) {
+  if (!dateStr) return "";
+  const then = new Date(dateStr);
+  if (isNaN(then.getTime())) return "";
+  const seconds = Math.floor((Date.now() - then.getTime()) / 1000);
+  if (seconds < 45) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 2592000) return `${Math.floor(seconds / 86400)}d ago`;
+  return then.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
