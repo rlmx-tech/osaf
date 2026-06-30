@@ -69,3 +69,15 @@ export const ACTIVITY_OPTIONS = [
   "kayaking",
   "paddleboarding",
 ];
+
+export const EVENT_TYPE_LABELS = {
+  attack: "Attack",
+  sighting: "Sighting",
+  news: "News",
+};
+
+export const EVENT_TYPE_COLORS = {
+  attack: "#e74c3c",
+  sighting: "#2ecc71",
+  news: "#7f8c8d",
+};

@@ -4,6 +4,7 @@ import { useAuth } from "../../api/useAuth";
 const publicLinks = [
   { to: "/", label: "Map" },
   { to: "/database", label: "Database" },
+  { to: "/news", label: "News" },
   { to: "/stats", label: "Statistics" },
   { to: "/about", label: "About" },
 ];

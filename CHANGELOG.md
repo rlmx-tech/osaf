@@ -41,6 +41,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Shark News feed page (SP2).** Public recency-first feed at `/news` consuming
+  `GET /api/v1/news`: media-list rows (thumbnail, event-type chip, title, source
+  link-out, relative time, "incident" link on promoted items), event-type tabs
+  (All/Sightings/Attacks/News), debounced search, and load-more paging
+  (`useNews`, with ref-guarded in-flight + `AbortController` for stale-request
+  cancellation). All external URLs pass through a new `safeUrl()` http(s) guard
+  (discharges the SP1-deferred XSS item). Adds a minimal Vitest harness for the
+  pure logic (`safeUrl`, `relativeTime`, news paging helpers). Sightings already
+  render across the map/DB/stats via the existing classification constants — no
+  frontend change needed there. Spec/plan:
+  `docs/superpowers/specs/2026-06-30-osaf-shark-news-feed-page-design.md`,
+  `docs/superpowers/plans/2026-06-30-osaf-shark-news-feed-page.md`.
+
 - **Shark News capture + AI auto-promotion of sightings & attacks (SP1).** New
   additive `news_items` table captures *every* shark-relevant item the collector
   finds, so nothing is silently dropped at the old relevance gate (the original
