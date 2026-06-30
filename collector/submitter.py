@@ -32,7 +32,9 @@ class OsafSubmitter:
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
             resp.raise_for_status()
-            self._token = resp.json().get("access_token")
+            # The API issues the JWT as an httpOnly cookie (web app flow); older
+            # builds returned it in the body. Read the cookie first, fall back to body.
+            self._token = resp.cookies.get("access_token") or resp.json().get("access_token")
             if self._token:
                 logger.info("submitter: authenticated as %s", settings.osaf_username)
                 return True

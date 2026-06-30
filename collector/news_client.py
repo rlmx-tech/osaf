@@ -24,7 +24,8 @@ class NewsClient:
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
             resp.raise_for_status()
-            self._token = resp.json().get("access_token")
+            # JWT is issued as an httpOnly cookie (web app flow); fall back to body.
+            self._token = resp.cookies.get("access_token") or resp.json().get("access_token")
             return bool(self._token)
         except httpx.HTTPError:
             logger.exception("news_client: authentication failed")
