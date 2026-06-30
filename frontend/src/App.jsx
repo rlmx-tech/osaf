@@ -4,6 +4,7 @@ import Header from "./components/layout/Header";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import MapPage from "./pages/MapPage";
 import DatabasePage from "./pages/DatabasePage";
+import NewsPage from "./pages/NewsPage";
 import IncidentPage from "./pages/IncidentPage";
 import StatsPage from "./pages/StatsPage";
 import LoginPage from "./pages/LoginPage";
@@ -20,6 +21,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<MapPage />} />
             <Route path="/database" element={<DatabasePage />} />
+            <Route path="/news" element={<NewsPage />} />
             <Route path="/incidents/:id" element={<IncidentPage />} />
             <Route path="/stats" element={<StatsPage />} />
             <Route path="/about" element={<AboutPage />} />
