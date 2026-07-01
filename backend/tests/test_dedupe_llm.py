@@ -1,5 +1,6 @@
 import pytest
 from datetime import date, timedelta
+from sqlalchemy import select
 from app.models.incident import Incident
 import scripts.dedupe_llm as ddl
 from scripts.dedupe_llm import candidate_clusters
@@ -91,3 +92,34 @@ async def test_adjudicate_unparseable_response(monkeypatch):
     # LLM returns non-JSON garbage -> _parse_json_response yields None -> no merge
     monkeypatch.setattr(ddl, "_call_ollama", lambda p: _async("sorry, I cannot help with that"))
     assert await ddl.adjudicate([_I("OSAF-1"), _I("OSAF-2")]) == []
+
+
+# run() tests
+
+@pytest.mark.asyncio
+async def test_run_merges_confirmed_group(db, monkeypatch):
+    a = await _inc(db, "OSAF-2026-0001", date(2026, 6, 25))
+    b = await _inc(db, "OSAF-2026-0002", date(2026, 6, 26))  # near-dupe (1 day)
+
+    async def fake_adjudicate(cluster):
+        return [[i.case_number for i in cluster]]  # LLM says: same event
+    monkeypatch.setattr(ddl, "adjudicate", fake_adjudicate)
+
+    dry = await ddl.run(apply=False)
+    assert dry["llm_groups"] == 1
+    assert len((await db.execute(select(Incident))).scalars().all()) == 2  # dry-run: unchanged
+
+    applied = await ddl.run(apply=True)
+    assert applied["incidents_merged"] == 1
+    incs = (await db.execute(select(Incident))).scalars().all()
+    assert len(incs) == 1 and incs[0].case_number == "OSAF-2026-0001"
+
+
+@pytest.mark.asyncio
+async def test_run_no_groups_no_merge(db, monkeypatch):
+    await _inc(db, "OSAF-2026-0001", date(2026, 6, 25))
+    await _inc(db, "OSAF-2026-0002", date(2026, 6, 26))
+    monkeypatch.setattr(ddl, "adjudicate", lambda c: _async([]))
+    applied = await ddl.run(apply=True)
+    assert applied["incidents_merged"] == 0
+    assert len((await db.execute(select(Incident))).scalars().all()) == 2

@@ -108,3 +108,34 @@ async def candidate_clusters(db, window_days: int = 3, max_cluster: int = 10):
         else:
             out.append(c)
     return out
+
+
+async def run(apply: bool, window_days: int = 3) -> dict:
+    """Run the LLM-adjudicated dedupe pipeline. Returns stats dict."""
+    examined = 0
+    llm_groups = 0
+    merged = 0
+    async with async_session() as db:
+        clusters = await candidate_clusters(db, window_days=window_days)
+        for cluster in clusters:
+            examined += 1
+            for group in await adjudicate(cluster):
+                llm_groups += 1
+                canonical = min(group)
+                print(f"  LLM same-event group: {', '.join(sorted(group))} -> canonical {canonical}")
+                if apply:
+                    ids = [inc.id for inc in cluster if inc.case_number in group]
+                    merged += await merge_cluster(db, ids, "merged_llm")
+    print(
+        f"dedupe_llm: {'APPLIED' if apply else 'DRY-RUN'} — "
+        f"clusters_examined={examined}, llm_groups={llm_groups}, incidents_merged={merged}"
+    )
+    return {"clusters_examined": examined, "llm_groups": llm_groups, "incidents_merged": merged}
+
+
+if __name__ == "__main__":
+    _apply = "--apply" in sys.argv
+    _window = 3
+    if "--window" in sys.argv:
+        _window = int(sys.argv[sys.argv.index("--window") + 1])
+    asyncio.run(run(apply=_apply, window_days=_window))
