@@ -548,5 +548,5 @@ python -m app.utils.seed_data
 - Coordinates stored as WGS84 (SRID 4326) — standard GPS coordinates.
 - The ISAF is the gold standard for classification methodology. When in doubt, refer to: https://www.floridamuseum.ufl.edu/shark-attacks/about/isaf-case-classifications/
 - **Domain**: osaf.net
-- **GitHub repo**: osaf (e.g., github.com/<owner>/osaf)
+- **Repo**: Forgejo-only — `git.home.rlmx.tech/russ/osaf` (GitHub removed 2026-07-01)
 - This project is NOT affiliated with ISAF or the Florida Museum. It is an independent open-source effort.
