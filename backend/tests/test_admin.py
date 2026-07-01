@@ -87,11 +87,12 @@ async def test_admin_submissions_queue(
     user_headers = auth_header(test_user)
     admin_headers = auth_header(admin_user)
 
-    # Submit 2 incidents as public user
-    for _ in range(2):
+    # Submit 2 DISTINCT incidents (different dates) as public user — distinct dates
+    # keep them separate events so incident dedup doesn't merge them.
+    for i in range(2):
         await client.post(
             "/api/v1/submissions",
-            json=SAMPLE_INCIDENT_PAYLOAD,
+            json={**SAMPLE_INCIDENT_PAYLOAD, "incident_date": f"2025-03-{15 + i}"},
             headers=user_headers,
         )
 
@@ -108,10 +109,11 @@ async def test_admin_submissions_pagination(
     user_headers = auth_header(test_user)
     admin_headers = auth_header(admin_user)
 
-    for _ in range(3):
+    # Distinct dates so incident dedup keeps these as 3 separate submissions.
+    for i in range(3):
         await client.post(
             "/api/v1/submissions",
-            json=SAMPLE_INCIDENT_PAYLOAD,
+            json={**SAMPLE_INCIDENT_PAYLOAD, "incident_date": f"2025-03-{15 + i}"},
             headers=user_headers,
         )
 
