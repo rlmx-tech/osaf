@@ -84,3 +84,10 @@ async def test_adjudicate_no_groups(monkeypatch):
 async def test_adjudicate_llm_failure(monkeypatch):
     monkeypatch.setattr(ddl, "_call_ollama", lambda p: _async(None))
     assert await ddl.adjudicate([_I("OSAF-1"), _I("OSAF-2")]) == []
+
+
+@pytest.mark.asyncio
+async def test_adjudicate_unparseable_response(monkeypatch):
+    # LLM returns non-JSON garbage -> _parse_json_response yields None -> no merge
+    monkeypatch.setattr(ddl, "_call_ollama", lambda p: _async("sorry, I cannot help with that"))
+    assert await ddl.adjudicate([_I("OSAF-1"), _I("OSAF-2")]) == []
