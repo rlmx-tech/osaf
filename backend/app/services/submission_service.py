@@ -13,6 +13,7 @@ from app.models.incident import Incident
 from app.models.source import IncidentSource
 from app.models.user import User
 from app.schemas.incident import IncidentCreate, IncidentResponse, PaginatedIncidentResponse, PaginationMeta
+from app.services.dedup_service import attach_sources_to_incident, find_duplicate_incident
 from app.services.incident_service import _incident_to_response
 from app.utils.case_number import generate_case_number
 from app.utils.geo import point_from_coords
@@ -29,6 +30,11 @@ class SubmissionService:
         self, data: IncidentCreate, user: User
     ) -> IncidentResponse:
         """Public or verified contributor submission."""
+        existing = await find_duplicate_incident(self.db, data)
+        if existing is not None:
+            await attach_sources_to_incident(self.db, existing, data.sources, changed_by=user.id)
+            return await self._get_incident_response(existing.id)
+
         case_number = await generate_case_number(self.db)
 
         # Verified contributors get auto-published
