@@ -12,8 +12,15 @@ import AttacksByCountry from "../components/stats/AttacksByCountry";
 import AttacksBySpecies from "../components/stats/AttacksBySpecies";
 import AttacksByActivity from "../components/stats/AttacksByActivity";
 import FatalityTrends from "../components/stats/FatalityTrends";
+import { useSEO } from "../utils/useSEO";
 
 export default function StatsPage() {
+  useSEO({
+    title: "Shark Attack Statistics & Trends",
+    description:
+      "Shark incident statistics and trends: attacks by year, country, species, and activity, plus fatality rates over time — from the Open Shark Attack File.",
+    path: "/stats",
+  });
   const overview = useOverview();
   const byYear = useByYear();
   const byCountry = useByCountry();

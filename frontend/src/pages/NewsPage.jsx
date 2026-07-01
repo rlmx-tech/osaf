@@ -3,8 +3,15 @@ import { useNews } from "../api/useNews";
 import NewsTabs from "../components/news/NewsTabs";
 import NewsSearch from "../components/news/NewsSearch";
 import NewsFeed from "../components/news/NewsFeed";
+import { useSEO } from "../utils/useSEO";
 
 export default function NewsPage() {
+  useSEO({
+    title: "Shark News",
+    description:
+      "Recent shark sightings, incidents, and coverage captured from across the web, curated by the Open Shark Attack File.",
+    path: "/news",
+  });
   const [eventType, setEventType] = useState("");
   const [search, setSearch] = useState("");
   const { items, loading, error, hasMore, loadMore } = useNews({ eventType, search });

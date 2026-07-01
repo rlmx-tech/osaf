@@ -4,8 +4,15 @@ import { useIncidents } from "../api/useIncidents";
 import IncidentTable from "../components/incidents/IncidentTable";
 import IncidentFilters from "../components/incidents/IncidentFilters";
 import Pagination from "../components/incidents/Pagination";
+import { useSEO } from "../utils/useSEO";
 
 export default function DatabasePage() {
+  useSEO({
+    title: "Shark Attack Database",
+    description:
+      "Search and filter a public database of documented shark-human incidents worldwide — by species, country, activity, date, classification, and outcome.",
+    path: "/database",
+  });
   const navigate = useNavigate();
   const [filters, setFilters] = useState({
     sort: "incident_date",

@@ -7,6 +7,32 @@ import {
   REPORT_PLATFORM_OPTIONS,
 } from "../utils/constants";
 import { formatDate, formatSpecies, formatCoordinates } from "../utils/formatters";
+import { useSEO } from "../utils/useSEO";
+
+// Build SEO title/description from an incident record, skipping missing fields.
+function incidentSEO(incident, id) {
+  if (!incident) return { path: `/incidents/${id}` };
+  const label = CLASSIFICATION_LABELS[incident.classification] || "Shark";
+  const place =
+    incident.location_description ||
+    incident.body_of_water ||
+    incident.country ||
+    "unknown location";
+  const date = incident.incident_date ? formatDate(incident.incident_date) : null;
+  const species = formatSpecies(
+    incident.shark_species_confirmed || incident.shark_species_suspected,
+  );
+  const title = `${label} shark incident: ${place}${date ? ` (${date})` : ""}`;
+  const parts = [`${label} shark-human incident at ${place}`];
+  if (incident.country && !place.includes(incident.country)) parts.push(incident.country);
+  if (date) parts.push(`on ${date}`);
+  let desc = parts.join(", ") + ".";
+  if (species) desc += ` Shark: ${species}.`;
+  if (incident.victim_activity) desc += ` Activity: ${incident.victim_activity}.`;
+  desc += ` Outcome: ${incident.fatal ? "fatal" : "non-fatal"}.`;
+  if (incident.case_number) desc += ` Case ${incident.case_number}, Open Shark Attack File.`;
+  return { title, description: desc, path: `/incidents/${id}` };
+}
 
 function isSafeUrl(url) {
   if (!url) return false;
@@ -43,6 +69,8 @@ export default function IncidentPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { incident, loading, error } = useIncident(id);
+
+  useSEO(incidentSEO(incident, id));
 
   if (loading) {
     return (

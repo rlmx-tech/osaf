@@ -2,8 +2,15 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { CLASSIFICATION_COLORS, CLASSIFICATION_LABELS } from "../utils/constants";
 import client from "../api/client";
+import { useSEO } from "../utils/useSEO";
 
 export default function AboutPage() {
+  useSEO({
+    title: "About",
+    description:
+      "About the Open Shark Attack File (OSAF): an open-source, community-driven shark incident database and a transparent alternative to restricted academic shark attack files.",
+    path: "/about",
+  });
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
