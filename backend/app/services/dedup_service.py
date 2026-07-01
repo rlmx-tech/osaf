@@ -16,7 +16,7 @@ def _victim_conflict(inc: Incident, data: IncidentCreate) -> bool:
     """True if the victim details positively contradict (both present and differ)."""
     if inc.victim_age is not None and data.victim_age is not None and inc.victim_age != data.victim_age:
         return True
-    if inc.victim_sex and data.victim_sex and inc.victim_sex != data.victim_sex:
+    if inc.victim_sex is not None and data.victim_sex is not None and inc.victim_sex != data.victim_sex:
         return True
     return False
 

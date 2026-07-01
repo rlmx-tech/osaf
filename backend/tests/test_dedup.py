@@ -58,6 +58,12 @@ async def test_victim_age_guard_blocks(db):
 
 
 @pytest.mark.asyncio
+async def test_victim_sex_guard_blocks(db):
+    await _add_incident(db, case_number="OSAF-2026-0008", victim_sex="male")
+    assert await find_duplicate_incident(db, _create(victim_sex="female")) is None
+
+
+@pytest.mark.asyncio
 async def test_no_match_without_coords(db):
     await _add_incident(db, case_number="OSAF-2026-0005")
     assert await find_duplicate_incident(db, _create(coordinates=None)) is None
@@ -66,6 +72,6 @@ async def test_no_match_without_coords(db):
 @pytest.mark.asyncio
 async def test_lowest_case_number_wins(db):
     await _add_incident(db, case_number="OSAF-2026-0009")
-    first = await _add_incident(db, case_number="OSAF-2026-0007")
+    await _add_incident(db, case_number="OSAF-2026-0007")
     match = await find_duplicate_incident(db, _create())
     assert match.case_number == "OSAF-2026-0007"
