@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Stats counted sightings as attacks (SP5).** `StatsService` aggregated over
+  every incident regardless of classification, so the ~108 sightings (plus
+  near-miss/doubtful/etc.) inflated the headline attack numbers. All aggregates
+  (overview total/fatal/fatality-rate, by-year/country/species/activity,
+  fatality-trends) now filter to `ATTACK_CLASSIFICATIONS`
+  (`unprovoked, provoked, boat_bite, scavenge, aquaria`). Sightings remain in the
+  DB and on the Map/Database/News; they just no longer skew the stats.
+
 - **Statistics — "Incidents by Species" counted only confirmed species.**
   `StatsService.by_species()` and the overview `most_common_species` aggregated
   on `shark_species_confirmed`, which is populated for only ~6 of 6,580

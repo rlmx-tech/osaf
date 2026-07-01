@@ -228,3 +228,57 @@ async def test_by_country_empty(client: AsyncClient):
     response = await client.get("/api/v1/stats/by-country")
     assert response.status_code == 200
     assert response.json()["data"] == []
+
+
+async def _seed_mix(db):
+    # 2 attacks (1 fatal) + 2 sightings + 1 near_miss, same year/country/activity
+    rows = [
+        Incident(case_number="OSAF-2099-0001", incident_date=date(2099, 1, 1), date_precision="exact",
+                 location_description="X", country="Testland", location_precision="approximate",
+                 classification="unprovoked", fatal=True, victim_activity="surfing",
+                 shark_species_suspected="Carcharodon carcharias", verification_status="verified"),
+        Incident(case_number="OSAF-2099-0002", incident_date=date(2099, 1, 2), date_precision="exact",
+                 location_description="X", country="Testland", location_precision="approximate",
+                 classification="provoked", fatal=False, victim_activity="surfing",
+                 shark_species_suspected="Carcharodon carcharias", verification_status="verified"),
+        Incident(case_number="OSAF-2099-0003", incident_date=date(2099, 1, 3), date_precision="exact",
+                 location_description="X", country="Testland", location_precision="approximate",
+                 classification="sighting", fatal=False, victim_activity="swimming",
+                 shark_species_suspected="Galeocerdo cuvier", verification_status="verified"),
+        Incident(case_number="OSAF-2099-0004", incident_date=date(2099, 1, 4), date_precision="exact",
+                 location_description="X", country="Testland", location_precision="approximate",
+                 classification="sighting", fatal=False, victim_activity="swimming",
+                 shark_species_suspected="Galeocerdo cuvier", verification_status="verified"),
+        Incident(case_number="OSAF-2099-0005", incident_date=date(2099, 1, 5), date_precision="exact",
+                 location_description="X", country="Testland", location_precision="approximate",
+                 classification="near_miss", fatal=False, victim_activity="diving",
+                 verification_status="verified"),
+    ]
+    for r in rows:
+        db.add(r)
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_overview_counts_attacks_only(db):
+    from app.services.stats_service import StatsService
+    await _seed_mix(db)
+    ov = (await StatsService(db).overview())["data"]
+    assert ov["total_incidents"] == 2          # 2 attacks, not 5
+    assert ov["total_fatal"] == 1
+    assert ov["fatality_rate"] == 50.0
+
+
+@pytest.mark.asyncio
+async def test_breakdowns_exclude_non_attacks(db):
+    from app.services.stats_service import StatsService
+    await _seed_mix(db)
+    svc = StatsService(db)
+    by_year = (await svc.by_year())["data"]
+    assert sum(r["count"] for r in by_year) == 2
+    activities = {r["activity"] for r in (await svc.by_activity())["data"]}
+    assert "swimming" not in activities          # sighting activity excluded
+    assert "diving" not in activities            # near_miss activity excluded
+    assert activities == {"surfing"}
+    species = {r["species"] for r in (await svc.by_species())["data"]}
+    assert "Galeocerdo cuvier" not in species     # only sightings had tiger shark
