@@ -50,7 +50,7 @@ Based on the [ISAF methodology](https://www.floridamuseum.ufl.edu/shark-attacks/
 
 ```bash
 # Clone and start the full stack
-git clone https://github.com/russmorefield/osaf.git
+git clone https://git.home.rlmx.tech/russ/osaf.git
 cd osaf
 docker compose up -d
 ```

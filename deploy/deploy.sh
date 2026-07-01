@@ -6,7 +6,7 @@
 set -euo pipefail
 
 DOMAIN="osaf.net"
-REPO="https://github.com/russmorefield/osaf.git"
+REPO="https://git.home.rlmx.tech/russ/osaf.git"
 DEPLOY_DIR="$HOME/projects/OSAF"
 CERTBOT_WEBROOT="/var/www/certbot"
 
