@@ -7,12 +7,12 @@ from app.utils.geo import point_from_coords
 from scripts.dedupe_incidents import run
 
 
-async def _incident(db, case_number, url, pub, age=None):
+async def _incident(db, case_number, url, pub, age=None, description=None):
     from datetime import date
     inc = Incident(
         case_number=case_number, incident_date=date(2026, 6, 25), date_precision="exact",
         location_description="Bahamas", country="Bahamas", location_precision="approximate",
-        classification="unprovoked", fatal=False, victim_age=age,
+        classification="unprovoked", fatal=False, victim_age=age, description=description,
         coordinates=point_from_coords(-77.3434, 25.0764), verification_status="verified",
     )
     inc.sources.append(IncidentSource(source_type="news_article", source_url=url, source_publisher=pub))
@@ -51,6 +51,24 @@ async def test_apply_merges_cluster(db):
     assert len(news) == 1  # absorbed backfill news deleted
     # idempotent
     assert (await run(apply=True))["incidents_merged"] == 0
+
+
+@pytest.mark.asyncio
+async def test_enrich_fills_canonical_nulls(db):
+    """After merge, canonical's NULL fields are populated from absorbed's non-null values."""
+    # canonical has no description or victim_age
+    await _incident(db, "OSAF-2026-0001", "https://y/1", "Yahoo")
+    # absorbed has both
+    await _incident(db, "OSAF-2026-0002", "https://w/2", "WCIA",
+                    age=30, description="Incident near beach.")
+    stats = await run(apply=True)
+    assert stats["incidents_merged"] == 1
+    # force fresh load from DB (run() committed in its own session)
+    db.expire_all()
+    surviving = (await db.execute(select(Incident))).scalars().one()
+    assert surviving.case_number == "OSAF-2026-0001"
+    assert surviving.description == "Incident near beach."
+    assert surviving.victim_age == 30
 
 
 @pytest.mark.asyncio

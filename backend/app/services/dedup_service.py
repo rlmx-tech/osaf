@@ -37,6 +37,7 @@ async def find_duplicate_incident(db: AsyncSession, data: IncidentCreate) -> Inc
         .where(
             Incident.incident_date == data.incident_date,
             Incident.classification == data.classification,
+            Incident.verification_status != "rejected",
             Incident.coordinates.isnot(None),
             func.ST_DWithin(
                 cast(Incident.coordinates, Geography),

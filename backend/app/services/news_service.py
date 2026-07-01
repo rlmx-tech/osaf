@@ -2,7 +2,7 @@ import math
 import re
 from datetime import date
 
-from sqlalchemy import String, cast, desc, func, or_, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import aliased
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession

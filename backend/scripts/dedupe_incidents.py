@@ -5,6 +5,10 @@ Same event = exact-precision same date + coordinates (rounded to 3 dp ~= 111 m)
 Absorbed incidents: sources moved to canonical (dedup by URL), their news_items
 re-pointed to canonical (backfill news deleted), audit-logged, then deleted.
 
+Note: the cleanup clusters by rounded-3dp coordinate GRID CELLS (~111 m), which can
+leave a few near-cell-boundary duplicates that the live 150 m-radius matcher would
+catch; that residual is expected and safe (under-inclusive, never wrong-merging).
+
 Dry-run by default; pass --apply to perform the merges.
     python -m scripts.dedupe_incidents [--apply]
 """
@@ -21,6 +25,32 @@ from app.models.incident import Incident
 from app.models.news import NewsItem
 from app.models.source import IncidentSource
 from app.services.dedup_service import _victim_conflict
+
+_ENRICH_FIELDS = [
+    "incident_time", "state_province", "county_region", "body_of_water",
+    "classification_subtype", "provocation_subtype", "shark_species_confirmed",
+    "shark_species_suspected", "shark_size_estimate", "species_identification_method",
+    "victim_activity", "victim_injury_severity", "victim_injury_description",
+    "victim_age", "victim_sex", "victim_name", "description",
+]
+
+
+def _enrich(canonical: Incident, absorbed: Incident) -> list[str]:
+    """Fill canonical's NULL fields from absorbed's non-null values.
+
+    Returns the list of field names that were filled (empty if nothing changed).
+    NEVER overwrites a non-null canonical value.
+    """
+    filled: list[str] = []
+    for field in _ENRICH_FIELDS:
+        if getattr(canonical, field) is None and getattr(absorbed, field) is not None:
+            setattr(canonical, field, getattr(absorbed, field))
+            filled.append(field)
+    # fatal is a non-null bool — upgrade to True if absorbed was fatal
+    if absorbed.fatal and not canonical.fatal:
+        canonical.fatal = True
+        filled.append("fatal")
+    return filled
 
 
 async def _clusters(db):
@@ -108,7 +138,15 @@ async def run(apply: bool) -> dict:
                             notes=f"Absorbed duplicate {inc.case_number}",
                         )
                     )
+                    # enrich canonical with non-null fields from absorbed before deleting it
+                    filled = _enrich(canonical, inc)
+                    if filled:
+                        db.add(canonical)
                     await db.execute(delete(Incident).where(Incident.id == inc.id))
+                else:
+                    would_fill = _enrich(canonical, inc)
+                    if would_fill:
+                        print(f"    would fill from {inc.case_number}: {', '.join(would_fill)}")
                 merged += 1
             if apply:
                 await db.commit()

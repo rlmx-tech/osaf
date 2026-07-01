@@ -7,14 +7,14 @@ from app.utils.geo import point_from_coords
 
 async def _add_incident(db, *, case_number, classification="unprovoked", date="2026-06-25",
                         lon=-77.3434, lat=25.0764, date_precision="exact",
-                        victim_age=None, victim_sex=None):
+                        victim_age=None, victim_sex=None, verification_status="verified"):
     from datetime import date as _d
     y, m, d = (int(x) for x in date.split("-"))
     inc = Incident(
         case_number=case_number, incident_date=_d(y, m, d), date_precision=date_precision,
         location_description="Bahamas", country="Bahamas", location_precision="approximate",
         classification=classification, fatal=False, victim_age=victim_age, victim_sex=victim_sex,
-        coordinates=point_from_coords(lon, lat), verification_status="verified",
+        coordinates=point_from_coords(lon, lat), verification_status=verification_status,
     )
     db.add(inc)
     await db.commit()
@@ -101,6 +101,14 @@ async def test_submission_dedup_attaches_source(db, verified_user):
     assert len(second.sources) == 2
     pubs = {s.source_publisher for s in second.sources}
     assert pubs == {"Yahoo", "WCIA"}
+
+
+@pytest.mark.asyncio
+async def test_rejected_not_matched(db):
+    """A re-report of a rejected incident must NOT merge into the rejected record."""
+    await _add_incident(db, case_number="OSAF-2026-0010", verification_status="rejected")
+    result = await find_duplicate_incident(db, _create())
+    assert result is None
 
 
 @pytest.mark.asyncio
