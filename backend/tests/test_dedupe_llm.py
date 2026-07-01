@@ -2,6 +2,7 @@ import pytest
 from datetime import date, timedelta
 from sqlalchemy import select
 from app.models.incident import Incident
+from app.models.source import IncidentSource
 import scripts.dedupe_llm as ddl
 from scripts.dedupe_llm import candidate_clusters
 
@@ -123,3 +124,55 @@ async def test_run_no_groups_no_merge(db, monkeypatch):
     applied = await ddl.run(apply=True)
     assert applied["incidents_merged"] == 0
     assert len((await db.execute(select(Incident))).scalars().all()) == 2
+
+
+# Real-object tests — exercise the actual _build_prompt / adjudicate path
+# without ORM stubs. Would have caught C1 (AttributeError on inc.latitude) and
+# C2 (MissingGreenlet on inc.sources) before those bugs were fixed.
+
+
+@pytest.mark.asyncio
+async def test_build_prompt_real_incidents_with_sources(db):
+    """_build_prompt against persisted Incident rows with sources exercises C1 and C2 fixes."""
+    a = await _inc(db, "OSAF-REAL-001", date(2026, 6, 25))
+    b = await _inc(db, "OSAF-REAL-002", date(2026, 6, 26))
+
+    # Add one source each so source_titles is exercised
+    db.add(IncidentSource(incident_id=a.id, source_type="news_article", source_title="News A"))
+    db.add(IncidentSource(incident_id=b.id, source_type="news_article", source_title="News B"))
+    await db.commit()
+
+    # candidate_clusters eager-loads sources exactly as production does (C2 path)
+    clusters = await candidate_clusters(db)
+    assert len(clusters) == 1
+    cluster = clusters[0]
+
+    # _build_prompt must not raise AttributeError (C1) or MissingGreenlet (C2)
+    prompt = ddl._build_prompt(cluster)
+    assert isinstance(prompt, str)
+    assert "OSAF-REAL-001" in prompt
+    assert "OSAF-REAL-002" in prompt
+    assert "News A" in prompt
+    assert "News B" in prompt
+
+
+@pytest.mark.asyncio
+async def test_adjudicate_real_incidents(db, monkeypatch):
+    """adjudicate() with real ORM objects (not _I stubs) via monkeypatched _call_ollama."""
+    a = await _inc(db, "OSAF-REAL-001", date(2026, 6, 25))
+    b = await _inc(db, "OSAF-REAL-002", date(2026, 6, 26))
+
+    db.add(IncidentSource(incident_id=a.id, source_type="news_article", source_title="News A"))
+    db.add(IncidentSource(incident_id=b.id, source_type="news_article", source_title="News B"))
+    await db.commit()
+
+    clusters = await candidate_clusters(db)
+    assert len(clusters) == 1
+    cluster = clusters[0]
+
+    monkeypatch.setattr(
+        ddl, "_call_ollama",
+        lambda p: _async('{"groups": [["OSAF-REAL-001", "OSAF-REAL-002"]]}'),
+    )
+    groups = await ddl.adjudicate(cluster)
+    assert groups == [["OSAF-REAL-001", "OSAF-REAL-002"]]

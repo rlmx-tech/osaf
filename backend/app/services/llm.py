@@ -30,7 +30,7 @@ async def _call_ollama(prompt: str) -> str | None:
             )
             resp.raise_for_status()
             return resp.json().get("response", "")
-    except httpx.HTTPError:
+    except (httpx.HTTPError, ValueError):
         logger.exception("llm: ollama request failed")
         return None
 

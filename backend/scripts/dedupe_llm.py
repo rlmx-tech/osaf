@@ -15,6 +15,7 @@ import sys
 from itertools import groupby
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.database import async_session
 from app.models.incident import Incident
@@ -45,7 +46,6 @@ def _build_prompt(cluster) -> str:
             "location": inc.location_description,
             "state": inc.state_province,
             "body_of_water": inc.body_of_water,
-            "lat": inc.latitude, "lon": inc.longitude,
             "victim_age": inc.victim_age, "victim_sex": inc.victim_sex,
             "activity": inc.victim_activity, "species": inc.shark_species_suspected,
             "description": (inc.description or "")[:500],
@@ -81,6 +81,7 @@ async def candidate_clusters(db, window_days: int = 3, max_cluster: int = 10):
     incs = (
         await db.execute(
             select(Incident)
+            .options(selectinload(Incident.sources))
             .where(Incident.date_precision == "exact", Incident.incident_date.isnot(None))
             .order_by(Incident.country, Incident.classification, Incident.incident_date)
         )
