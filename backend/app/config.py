@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: str = "http://localhost:3000"
 
+    # Ollama Cloud (used by the LLM near-dupe batch job)
+    ollama_url: str = "https://ollama.com"
+    ollama_api_key: str = ""
+    ollama_model: str = "glm-5.2:cloud"
+    ollama_timeout: int = 300
+
     # Environment: "development" disables cookie Secure flag and OpenAPI gate
     app_env: str = "production"
 

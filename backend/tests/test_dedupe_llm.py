@@ -1,0 +1,178 @@
+import pytest
+from datetime import date, timedelta
+from sqlalchemy import select
+from app.models.incident import Incident
+from app.models.source import IncidentSource
+import scripts.dedupe_llm as ddl
+from scripts.dedupe_llm import candidate_clusters
+
+
+async def _inc(db, case, d, country="Bahamas", cls="unprovoked"):
+    i = Incident(case_number=case, incident_date=d, date_precision="exact",
+                 location_description="X", country=country, location_precision="approximate",
+                 classification=cls, fatal=False, verification_status="verified")
+    db.add(i); await db.commit(); await db.refresh(i)
+    return i
+
+
+@pytest.mark.asyncio
+async def test_clusters_within_window(db):
+    await _inc(db, "OSAF-1", date(2026, 6, 25))
+    await _inc(db, "OSAF-2", date(2026, 6, 26))      # 1 day apart, same country+class
+    clusters = await candidate_clusters(db)
+    assert len(clusters) == 1 and len(clusters[0]) == 2
+
+
+@pytest.mark.asyncio
+async def test_no_cluster_outside_window(db):
+    await _inc(db, "OSAF-1", date(2026, 6, 25))
+    await _inc(db, "OSAF-2", date(2026, 7, 10))      # >3 days
+    assert await candidate_clusters(db) == []
+
+
+@pytest.mark.asyncio
+async def test_no_cluster_across_classification(db):
+    await _inc(db, "OSAF-1", date(2026, 6, 25), cls="unprovoked")
+    await _inc(db, "OSAF-2", date(2026, 6, 26), cls="provoked")
+    assert await candidate_clusters(db) == []
+
+
+@pytest.mark.asyncio
+async def test_oversize_cluster_skipped(db):
+    for n in range(12):
+        await _inc(db, f"OSAF-{n:02d}", date(2026, 6, 25) + timedelta(days=n))  # chain within 3d
+    assert await candidate_clusters(db, max_cluster=10) == []
+
+
+# adjudicate() tests
+
+class _I:  # lightweight incident stand-in for adjudicate() (case_number + fields used in prompt)
+    def __init__(self, case):
+        self.case_number = case
+        self.incident_date = date(2026, 6, 25)
+        self.location_description = "Bahamas"; self.state_province = None; self.body_of_water = None
+        self.latitude = None; self.longitude = None
+        self.victim_age = None; self.victim_sex = None; self.victim_activity = None
+        self.shark_species_suspected = None; self.description = "d"; self.sources = []
+
+
+def _async(val):
+    async def _c():
+        return val
+    return _c()
+
+
+@pytest.mark.asyncio
+async def test_adjudicate_valid_group(monkeypatch):
+    monkeypatch.setattr(ddl, "_call_ollama", lambda p: _async('{"groups": [["OSAF-1", "OSAF-2"]]}'))
+    groups = await ddl.adjudicate([_I("OSAF-1"), _I("OSAF-2"), _I("OSAF-3")])
+    assert groups == [["OSAF-1", "OSAF-2"]]
+
+
+@pytest.mark.asyncio
+async def test_adjudicate_drops_hallucinated_case(monkeypatch):
+    # OSAF-9 not in the cluster -> dropped; group then has <2 valid -> discarded
+    monkeypatch.setattr(ddl, "_call_ollama", lambda p: _async('{"groups": [["OSAF-1", "OSAF-9"]]}'))
+    assert await ddl.adjudicate([_I("OSAF-1"), _I("OSAF-2")]) == []
+
+
+@pytest.mark.asyncio
+async def test_adjudicate_no_groups(monkeypatch):
+    monkeypatch.setattr(ddl, "_call_ollama", lambda p: _async('{"groups": []}'))
+    assert await ddl.adjudicate([_I("OSAF-1"), _I("OSAF-2")]) == []
+
+
+@pytest.mark.asyncio
+async def test_adjudicate_llm_failure(monkeypatch):
+    monkeypatch.setattr(ddl, "_call_ollama", lambda p: _async(None))
+    assert await ddl.adjudicate([_I("OSAF-1"), _I("OSAF-2")]) == []
+
+
+@pytest.mark.asyncio
+async def test_adjudicate_unparseable_response(monkeypatch):
+    # LLM returns non-JSON garbage -> _parse_json_response yields None -> no merge
+    monkeypatch.setattr(ddl, "_call_ollama", lambda p: _async("sorry, I cannot help with that"))
+    assert await ddl.adjudicate([_I("OSAF-1"), _I("OSAF-2")]) == []
+
+
+# run() tests
+
+@pytest.mark.asyncio
+async def test_run_merges_confirmed_group(db, monkeypatch):
+    a = await _inc(db, "OSAF-2026-0001", date(2026, 6, 25))
+    b = await _inc(db, "OSAF-2026-0002", date(2026, 6, 26))  # near-dupe (1 day)
+
+    async def fake_adjudicate(cluster):
+        return [[i.case_number for i in cluster]]  # LLM says: same event
+    monkeypatch.setattr(ddl, "adjudicate", fake_adjudicate)
+
+    dry = await ddl.run(apply=False)
+    assert dry["llm_groups"] == 1
+    assert len((await db.execute(select(Incident))).scalars().all()) == 2  # dry-run: unchanged
+
+    applied = await ddl.run(apply=True)
+    assert applied["incidents_merged"] == 1
+    incs = (await db.execute(select(Incident))).scalars().all()
+    assert len(incs) == 1 and incs[0].case_number == "OSAF-2026-0001"
+
+
+@pytest.mark.asyncio
+async def test_run_no_groups_no_merge(db, monkeypatch):
+    await _inc(db, "OSAF-2026-0001", date(2026, 6, 25))
+    await _inc(db, "OSAF-2026-0002", date(2026, 6, 26))
+    monkeypatch.setattr(ddl, "adjudicate", lambda c: _async([]))
+    applied = await ddl.run(apply=True)
+    assert applied["incidents_merged"] == 0
+    assert len((await db.execute(select(Incident))).scalars().all()) == 2
+
+
+# Real-object tests — exercise the actual _build_prompt / adjudicate path
+# without ORM stubs. Would have caught C1 (AttributeError on inc.latitude) and
+# C2 (MissingGreenlet on inc.sources) before those bugs were fixed.
+
+
+@pytest.mark.asyncio
+async def test_build_prompt_real_incidents_with_sources(db):
+    """_build_prompt against persisted Incident rows with sources exercises C1 and C2 fixes."""
+    a = await _inc(db, "OSAF-REAL-001", date(2026, 6, 25))
+    b = await _inc(db, "OSAF-REAL-002", date(2026, 6, 26))
+
+    # Add one source each so source_titles is exercised
+    db.add(IncidentSource(incident_id=a.id, source_type="news_article", source_title="News A"))
+    db.add(IncidentSource(incident_id=b.id, source_type="news_article", source_title="News B"))
+    await db.commit()
+
+    # candidate_clusters eager-loads sources exactly as production does (C2 path)
+    clusters = await candidate_clusters(db)
+    assert len(clusters) == 1
+    cluster = clusters[0]
+
+    # _build_prompt must not raise AttributeError (C1) or MissingGreenlet (C2)
+    prompt = ddl._build_prompt(cluster)
+    assert isinstance(prompt, str)
+    assert "OSAF-REAL-001" in prompt
+    assert "OSAF-REAL-002" in prompt
+    assert "News A" in prompt
+    assert "News B" in prompt
+
+
+@pytest.mark.asyncio
+async def test_adjudicate_real_incidents(db, monkeypatch):
+    """adjudicate() with real ORM objects (not _I stubs) via monkeypatched _call_ollama."""
+    a = await _inc(db, "OSAF-REAL-001", date(2026, 6, 25))
+    b = await _inc(db, "OSAF-REAL-002", date(2026, 6, 26))
+
+    db.add(IncidentSource(incident_id=a.id, source_type="news_article", source_title="News A"))
+    db.add(IncidentSource(incident_id=b.id, source_type="news_article", source_title="News B"))
+    await db.commit()
+
+    clusters = await candidate_clusters(db)
+    assert len(clusters) == 1
+    cluster = clusters[0]
+
+    monkeypatch.setattr(
+        ddl, "_call_ollama",
+        lambda p: _async('{"groups": [["OSAF-REAL-001", "OSAF-REAL-002"]]}'),
+    )
+    groups = await ddl.adjudicate(cluster)
+    assert groups == [["OSAF-REAL-001", "OSAF-REAL-002"]]

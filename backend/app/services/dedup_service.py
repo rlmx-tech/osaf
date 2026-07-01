@@ -1,10 +1,11 @@
 from geoalchemy2 import Geography
-from sqlalchemy import cast, func, select
+from sqlalchemy import cast, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.audit import IncidentAuditLog
 from app.models.incident import Incident
+from app.models.news import NewsItem
 from app.models.source import IncidentSource
 from app.schemas.incident import IncidentCreate, SourceCreate
 from app.utils.geo import point_from_coords
@@ -94,3 +95,87 @@ async def attach_sources_to_incident(
         )
     )
     await db.commit()
+
+
+_ENRICH_FIELDS = [
+    "incident_time", "state_province", "county_region", "body_of_water",
+    "classification_subtype", "provocation_subtype", "shark_species_confirmed",
+    "shark_species_suspected", "shark_size_estimate", "species_identification_method",
+    "victim_activity", "victim_injury_severity", "victim_injury_description",
+    "victim_age", "victim_sex", "victim_name", "description",
+]
+
+
+def _would_fill(canonical, absorbed) -> list[str]:
+    """Field names that would be filled on canonical from absorbed (no mutation)."""
+    filled = [f for f in _ENRICH_FIELDS
+              if getattr(canonical, f) is None and getattr(absorbed, f) is not None]
+    if absorbed.fatal and not canonical.fatal:
+        filled.append("fatal")
+    return filled
+
+
+def _enrich(canonical, absorbed) -> list[str]:
+    """Fill canonical's NULL fields from absorbed's non-null values. Returns filled names."""
+    filled: list[str] = []
+    for f in _ENRICH_FIELDS:
+        if getattr(canonical, f) is None and getattr(absorbed, f) is not None:
+            setattr(canonical, f, getattr(absorbed, f))
+            filled.append(f)
+    if absorbed.fatal and not canonical.fatal:
+        canonical.fatal = True
+        filled.append("fatal")
+    return filled
+
+
+async def merge_cluster(db, incident_ids, action: str) -> int:
+    """Merge the given incidents into the lowest-case-number canonical. Commits.
+    Moves sources (dedup by URL), prunes absorbed backfill news + re-points others,
+    enriches canonical, audit-logs, deletes absorbed. Returns absorbed count."""
+    rows = (
+        await db.execute(
+            select(Incident).where(Incident.id.in_(incident_ids)).order_by(Incident.case_number.asc())
+        )
+    ).scalars().all()
+    if len(rows) < 2:
+        return 0
+    canonical = rows[0]
+    canon_urls = {
+        s.source_url
+        for s in (
+            await db.execute(select(IncidentSource).where(IncidentSource.incident_id == canonical.id))
+        ).scalars().all()
+        if s.source_url
+    }
+    absorbed_count = 0
+    for inc in rows[1:]:
+        srcs = (
+            await db.execute(select(IncidentSource).where(IncidentSource.incident_id == inc.id))
+        ).scalars().all()
+        for s in srcs:
+            if s.source_url and s.source_url in canon_urls:
+                await db.execute(delete(IncidentSource).where(IncidentSource.id == s.id))
+            else:
+                await db.execute(
+                    update(IncidentSource).where(IncidentSource.id == s.id).values(incident_id=canonical.id)
+                )
+                if s.source_url:
+                    canon_urls.add(s.source_url)
+        await db.execute(
+            delete(NewsItem).where(
+                NewsItem.promoted_incident_id == inc.id, NewsItem.dedup_key.like("backfill:%")
+            )
+        )
+        await db.execute(
+            update(NewsItem).where(NewsItem.promoted_incident_id == inc.id).values(
+                promoted_incident_id=canonical.id
+            )
+        )
+        db.add(IncidentAuditLog(incident_id=canonical.id, action=action,
+                                notes=f"Absorbed duplicate {inc.case_number}"))
+        if _enrich(canonical, inc):
+            db.add(canonical)
+        await db.execute(delete(Incident).where(Incident.id == inc.id))
+        absorbed_count += 1
+    await db.commit()
+    return absorbed_count

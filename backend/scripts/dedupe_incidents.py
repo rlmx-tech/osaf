@@ -17,40 +17,11 @@ import asyncio
 import sys
 
 from geoalchemy2.functions import ST_X, ST_Y
-from sqlalchemy import Numeric, delete, func, select, update
+from sqlalchemy import Numeric, func, select
 
 from app.database import async_session
-from app.models.audit import IncidentAuditLog
 from app.models.incident import Incident
-from app.models.news import NewsItem
-from app.models.source import IncidentSource
-from app.services.dedup_service import _victim_conflict
-
-_ENRICH_FIELDS = [
-    "incident_time", "state_province", "county_region", "body_of_water",
-    "classification_subtype", "provocation_subtype", "shark_species_confirmed",
-    "shark_species_suspected", "shark_size_estimate", "species_identification_method",
-    "victim_activity", "victim_injury_severity", "victim_injury_description",
-    "victim_age", "victim_sex", "victim_name", "description",
-]
-
-
-def _enrich(canonical: Incident, absorbed: Incident) -> list[str]:
-    """Fill canonical's NULL fields from absorbed's non-null values.
-
-    Returns the list of field names that were filled (empty if nothing changed).
-    NEVER overwrites a non-null canonical value.
-    """
-    filled: list[str] = []
-    for field in _ENRICH_FIELDS:
-        if getattr(canonical, field) is None and getattr(absorbed, field) is not None:
-            setattr(canonical, field, getattr(absorbed, field))
-            filled.append(field)
-    # fatal is a non-null bool — upgrade to True if absorbed was fatal
-    if absorbed.fatal and not canonical.fatal:
-        canonical.fatal = True
-        filled.append("fatal")
-    return filled
+from app.services.dedup_service import _victim_conflict, _would_fill, merge_cluster
 
 
 async def _clusters(db):
@@ -77,79 +48,25 @@ async def run(apply: bool) -> dict:
         for ids in await _clusters(db):
             rows = (
                 await db.execute(
-                    select(Incident)
-                    .where(Incident.id.in_(ids))
-                    .order_by(Incident.case_number.asc())
+                    select(Incident).where(Incident.id.in_(ids)).order_by(Incident.case_number.asc())
                 )
             ).scalars().all()
             if len(rows) < 2:
                 continue
             canonical = rows[0]
-            # canonical source URLs (for dedup when moving absorbed sources)
-            canon_urls = {
-                s.source_url
-                for s in (
-                    await db.execute(
-                        select(IncidentSource).where(IncidentSource.incident_id == canonical.id)
-                    )
-                ).scalars().all()
-                if s.source_url
-            }
             absorbed = [inc for inc in rows[1:] if not _victim_conflict(canonical, _as_create(inc))]
             if not absorbed:
                 continue
             clusters += 1
-            for inc in absorbed:
-                print(f"  merge {inc.case_number} -> {canonical.case_number}")
-                if apply:
-                    # move sources not already present (by url)
-                    srcs = (
-                        await db.execute(
-                            select(IncidentSource).where(IncidentSource.incident_id == inc.id)
-                        )
-                    ).scalars().all()
-                    for s in srcs:
-                        if s.source_url and s.source_url in canon_urls:
-                            await db.execute(delete(IncidentSource).where(IncidentSource.id == s.id))
-                        else:
-                            await db.execute(
-                                update(IncidentSource)
-                                .where(IncidentSource.id == s.id)
-                                .values(incident_id=canonical.id)
-                            )
-                            if s.source_url:
-                                canon_urls.add(s.source_url)
-                    # absorbed backfill news -> delete; other news -> re-point
-                    await db.execute(
-                        delete(NewsItem).where(
-                            NewsItem.promoted_incident_id == inc.id,
-                            NewsItem.dedup_key.like("backfill:%"),
-                        )
-                    )
-                    await db.execute(
-                        update(NewsItem)
-                        .where(NewsItem.promoted_incident_id == inc.id)
-                        .values(promoted_incident_id=canonical.id)
-                    )
-                    db.add(
-                        IncidentAuditLog(
-                            incident_id=canonical.id,
-                            action="merged",
-                            notes=f"Absorbed duplicate {inc.case_number}",
-                        )
-                    )
-                    # enrich canonical with non-null fields from absorbed before deleting it
-                    filled = _enrich(canonical, inc)
-                    if filled:
-                        db.add(canonical)
-                    await db.execute(delete(Incident).where(Incident.id == inc.id))
-                else:
-                    would_fill = _enrich(canonical, inc)
-                    if would_fill:
-                        print(f"    would fill from {inc.case_number}: {', '.join(would_fill)}")
-                merged += 1
             if apply:
-                await db.commit()
+                merged += await merge_cluster(db, [canonical.id] + [i.id for i in absorbed], "merged")
+            else:
+                for inc in absorbed:
+                    print(f"  merge {inc.case_number} -> {canonical.case_number}")
+                    wf = _would_fill(canonical, inc)
+                    if wf:
+                        print(f"    would fill from {inc.case_number}: {', '.join(wf)}")
+                    merged += 1
     print(f"dedupe_incidents: {'APPLIED' if apply else 'DRY-RUN'} — clusters={clusters}, incidents_merged={merged}")
     return {"clusters": clusters, "incidents_merged": merged}
 
