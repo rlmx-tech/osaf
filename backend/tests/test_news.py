@@ -156,3 +156,28 @@ async def test_news_search_escapes_wildcards(db):
     result = await svc.list_news(search="100%")
     assert result.meta.total == 1
     assert result.data[0].dedup_key == "news_rss:https://s/1"
+
+
+@pytest.mark.asyncio
+async def test_list_news_collapses_promoted_by_incident(db, sample_incident):
+    from app.schemas.news import NewsItemCreate
+    from app.services.news_service import NewsService
+    svc = NewsService(db)
+    # Two promoted news items for the SAME incident (two outlets)
+    for i, pub in enumerate(["Yahoo", "WCIA"]):
+        await svc.upsert(NewsItemCreate(
+            dedup_key=f"news_rss:https://d/{i}", source_platform="news_rss",
+            source_name=pub, source_url=f"https://d/{i}", title=f"shark {pub}",
+            event_type="attack", promoted_case_number=sample_incident.case_number,
+        ))
+    # One general (non-event) news item
+    await svc.upsert(NewsItemCreate(
+        dedup_key="news_rss:https://g/1", source_platform="news_rss",
+        source_name="GN", source_url="https://g/1", title="shark documentary",
+        event_type="news",
+    ))
+    listed = await svc.list_news()
+    # 1 collapsed promoted event + 1 general = 2, not 3
+    assert listed.meta.total == 2
+    promoted = [r for r in listed.data if r.promoted_incident_id is not None]
+    assert len(promoted) == 1

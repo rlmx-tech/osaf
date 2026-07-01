@@ -2,7 +2,8 @@ import math
 import re
 from datetime import date
 
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import String, cast, desc, func, or_, select
+from sqlalchemy.orm import aliased
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,32 +62,56 @@ class NewsService:
         event_type: str | None = None,
         country: str | None = None,
         source_platform: str | None = None,
-        date_from: date | None = None,
-        date_to: date | None = None,
+        date_from: "date | None" = None,
+        date_to: "date | None" = None,
         search: str | None = None,
         page: int = 1,
         per_page: int = 50,
     ) -> PaginatedNewsResponse:
-        query = select(NewsItem)
+        filters = []
         if event_type:
-            query = query.where(NewsItem.event_type.in_([e.strip() for e in event_type.split(",")]))
+            filters.append(NewsItem.event_type.in_([e.strip() for e in event_type.split(",")]))
         if country:
-            query = query.where(NewsItem.country.in_([c.strip() for c in country.split(",")]))
+            filters.append(NewsItem.country.in_([c.strip() for c in country.split(",")]))
         if source_platform:
-            query = query.where(NewsItem.source_platform.in_([s.strip() for s in source_platform.split(",")]))
+            filters.append(NewsItem.source_platform.in_([s.strip() for s in source_platform.split(",")]))
         if date_from:
-            query = query.where(NewsItem.captured_at >= date_from)
+            filters.append(NewsItem.captured_at >= date_from)
         if date_to:
-            query = query.where(NewsItem.captured_at <= date_to)
+            filters.append(NewsItem.captured_at <= date_to)
         if search:
             safe_search = re.sub(r"([%_\\])", r"\\\1", search)
             like = f"%{safe_search}%"
-            query = query.where(or_(NewsItem.title.ilike(like), NewsItem.summary.ilike(like)))
+            filters.append(or_(NewsItem.title.ilike(like), NewsItem.summary.ilike(like)))
 
-        total = (await self.db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
+        # Collapse promoted rows to one per incident (newest captured_at); general
+        # rows (no promoted_incident_id) each form their own partition, so all kept.
+        partition = func.coalesce(
+            cast(NewsItem.promoted_incident_id, String), cast(NewsItem.id, String)
+        )
+        rn = func.row_number().over(
+            partition_by=partition, order_by=NewsItem.captured_at.desc()
+        ).label("rn")
+
+        ranked = select(NewsItem, rn).where(*filters).subquery()
+        item = aliased(NewsItem, ranked)
+
+        total = (
+            await self.db.execute(
+                select(func.count()).select_from(ranked).where(ranked.c.rn == 1)
+            )
+        ).scalar_one()
+
         offset = (page - 1) * per_page
-        query = query.order_by(desc(NewsItem.captured_at)).offset(offset).limit(per_page)
-        rows = (await self.db.execute(query)).scalars().all()
+        rows = (
+            await self.db.execute(
+                select(item)
+                .where(ranked.c.rn == 1)
+                .order_by(ranked.c.captured_at.desc())
+                .offset(offset)
+                .limit(per_page)
+            )
+        ).scalars().all()
 
         return PaginatedNewsResponse(
             data=[NewsItemRead.model_validate(r) for r in rows],
