@@ -33,6 +33,8 @@ async def test_dryrun_changes_nothing(db):
     stats = await run(apply=False)
     assert stats["incidents_merged"] == 1  # would merge 1 absorbed
     assert (await db.execute(select(Incident))).scalars().all().__len__() == 2  # unchanged
+    assert len((await db.execute(select(IncidentSource))).scalars().all()) == 2
+    assert len((await db.execute(select(NewsItem))).scalars().all()) == 2
 
 
 @pytest.mark.asyncio
