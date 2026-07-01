@@ -22,6 +22,59 @@ from app.services.dedup_service import merge_cluster
 from app.services.llm import _call_ollama, _parse_json_response
 
 
+_PROMPT_HEADER = (
+    "You are deduplicating shark incident records. The incidents below are close in "
+    "time and share a country and classification. Identify which records describe the "
+    "SAME real-world event (same victim, location, and circumstances) — typically the "
+    "same event reported by different outlets.\n\n"
+    "Rules:\n"
+    "- Use ONLY the data provided below. Do not use outside knowledge.\n"
+    "- Group records ONLY if they clearly describe the same event. When unsure, do NOT group.\n"
+    "- A record that is its own distinct event must not appear in any group.\n"
+    "- Respond with ONLY valid JSON: {\"groups\": [[\"CASE\", \"CASE\"], ...]}. "
+    "Use the exact case_number strings. Omit singletons. If none match, return {\"groups\": []}.\n\n"
+    "INCIDENTS:\n"
+)
+
+
+def _build_prompt(cluster) -> str:
+    items = [
+        {
+            "case_number": inc.case_number,
+            "date": str(inc.incident_date),
+            "location": inc.location_description,
+            "state": inc.state_province,
+            "body_of_water": inc.body_of_water,
+            "lat": inc.latitude, "lon": inc.longitude,
+            "victim_age": inc.victim_age, "victim_sex": inc.victim_sex,
+            "activity": inc.victim_activity, "species": inc.shark_species_suspected,
+            "description": (inc.description or "")[:500],
+            "source_titles": [getattr(s, "source_title", None) for s in getattr(inc, "sources", [])][:5],
+        }
+        for inc in cluster
+    ]
+    return _PROMPT_HEADER + json.dumps(items, default=str, indent=2)
+
+
+async def adjudicate(cluster) -> list[list[str]]:
+    """Return LLM-confirmed same-event groups of case numbers (allowlisted, >=2)."""
+    resp = await _call_ollama(_build_prompt(cluster))
+    if not resp:
+        return []
+    data = _parse_json_response(resp)
+    if not data:
+        return []
+    valid = {inc.case_number for inc in cluster}
+    out: list[list[str]] = []
+    for group in data.get("groups", []) or []:
+        if not isinstance(group, list):
+            continue
+        members = list(dict.fromkeys(c for c in group if c in valid))  # allowlist + de-dup, keep order
+        if len(members) >= 2:
+            out.append(members)
+    return out
+
+
 async def candidate_clusters(db, window_days: int = 3, max_cluster: int = 10):
     """Groups of >=2 incidents sharing (country, classification) within a transitive
     +/-window_days date chain. Clusters larger than max_cluster are skipped (logged)."""
