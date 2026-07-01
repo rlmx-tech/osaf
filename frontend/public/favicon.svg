@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#111827"/>
+  <!-- shark fin -->
+  <path d="M23 22 L19 22 C19 14 21 10 23 7 C24 12 24 17 23 22 Z" fill="#e74c3c"/>
+  <!-- waterline -->
+  <rect x="6" y="21.5" width="20" height="2.2" rx="1.1" fill="#60a5fa"/>
+</svg>

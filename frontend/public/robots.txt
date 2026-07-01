@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /login
+Disallow: /submit
+
+Sitemap: https://osaf.net/sitemap.xml

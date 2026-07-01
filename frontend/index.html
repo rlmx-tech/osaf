@@ -4,6 +4,92 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OSAF — Open Shark Attack File</title>
+    <meta
+      name="description"
+      content="Open-source, community-driven database of worldwide shark-human incidents. Explore an interactive map, searchable records, and trend statistics — free and fully open."
+    />
+    <meta
+      name="keywords"
+      content="shark attacks, shark bites, shark incidents, shark attack database, shark attack map, unprovoked shark attack, marine biology, open data"
+    />
+    <meta name="author" content="OSAF — Open Shark Attack File" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#111827" />
+    <link rel="canonical" href="https://osaf.net/" />
+
+    <!-- Icons -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+    <!-- Open Graph (Facebook, LinkedIn, Slack, iMessage, etc.) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="OSAF — Open Shark Attack File" />
+    <meta property="og:title" content="OSAF — Open Shark Attack File" />
+    <meta
+      property="og:description"
+      content="Open-source, community-driven database of worldwide shark-human incidents. Interactive map, searchable records, and trend statistics — free and fully open."
+    />
+    <meta property="og:url" content="https://osaf.net/" />
+    <meta property="og:image" content="https://osaf.net/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="OSAF — Open Shark Attack File" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter / X Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="OSAF — Open Shark Attack File" />
+    <meta
+      name="twitter:description"
+      content="Open-source, community-driven database of worldwide shark-human incidents. Interactive map, searchable records, and trend statistics."
+    />
+    <meta name="twitter:image" content="https://osaf.net/og-image.png" />
+    <meta name="twitter:image:alt" content="OSAF — Open Shark Attack File" />
+
+    <!-- Structured data: Organization + Dataset (Google Dataset Search) -->
+    <!-- TODO: add "license" to the Dataset node once the project's data license is finalized. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://osaf.net/#organization",
+            "name": "OSAF — Open Shark Attack File",
+            "url": "https://osaf.net/",
+            "logo": "https://osaf.net/apple-touch-icon.png",
+            "description": "An open-source, community-driven shark incident database and a transparent alternative to restricted academic shark attack files."
+          },
+          {
+            "@type": "Dataset",
+            "@id": "https://osaf.net/#dataset",
+            "name": "Open Shark Attack File (OSAF)",
+            "description": "A public, community-maintained dataset of documented shark-human incidents worldwide, using the ISAF classification methodology. Each record includes date, location with coordinates, classification, shark species, victim activity and outcome, and cited sources.",
+            "url": "https://osaf.net/",
+            "keywords": [
+              "shark attacks",
+              "shark bites",
+              "shark incidents",
+              "marine biology",
+              "unprovoked shark attack",
+              "open data"
+            ],
+            "isAccessibleForFree": true,
+            "creator": { "@id": "https://osaf.net/#organization" },
+            "publisher": { "@id": "https://osaf.net/#organization" },
+            "distribution": [
+              {
+                "@type": "DataDownload",
+                "encodingFormat": "application/json",
+                "contentUrl": "https://osaf.net/api/v1/incidents"
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
