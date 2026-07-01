@@ -18,6 +18,7 @@ from app.schemas.incident import (
     PaginatedIncidentResponse,
     PaginationMeta,
 )
+from app.services.dedup_service import attach_sources_to_incident, find_duplicate_incident
 from app.utils.case_number import generate_case_number
 from app.utils.geo import point_from_coords
 
@@ -224,6 +225,11 @@ class IncidentService:
         return IncidentResponse(**data)
 
     async def create_incident(self, data: IncidentCreate) -> IncidentResponse:
+        existing = await find_duplicate_incident(self.db, data)
+        if existing is not None:
+            await attach_sources_to_incident(self.db, existing, data.sources)
+            return await self.get_incident(existing.id)
+
         case_number = await generate_case_number(self.db)
 
         incident = Incident(

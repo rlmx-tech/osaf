@@ -75,3 +75,48 @@ async def test_lowest_case_number_wins(db):
     await _add_incident(db, case_number="OSAF-2026-0007")
     match = await find_duplicate_incident(db, _create())
     assert match.case_number == "OSAF-2026-0007"
+
+
+@pytest.mark.asyncio
+async def test_submission_dedup_attaches_source(db, verified_user):
+    from app.schemas.incident import IncidentCreate, CoordinatesSchema, SourceCreate
+    from app.services.submission_service import SubmissionService
+    svc = SubmissionService(db)
+
+    def mk(pub, url):
+        return IncidentCreate(
+            location_description="Bahamas", country="Bahamas", classification="unprovoked",
+            incident_date="2026-06-25", date_precision="exact",
+            coordinates=CoordinatesSchema(longitude=-77.3434, latitude=25.0764),
+            sources=[SourceCreate(source_type="news_article", source_url=url,
+                                  source_title="t", source_publisher=pub)],
+        )
+
+    first = await svc.submit_incident(mk("Yahoo", "https://y/1"), verified_user)
+    second = await svc.submit_incident(mk("WCIA", "https://w/2"), verified_user)
+
+    # Same incident returned, no new case number
+    assert second.case_number == first.case_number
+    # Both outlets are now sources on the one incident
+    assert len(second.sources) == 2
+    pubs = {s.source_publisher for s in second.sources}
+    assert pubs == {"Yahoo", "WCIA"}
+
+
+@pytest.mark.asyncio
+async def test_submission_distinct_event_creates_new(db, verified_user):
+    from app.schemas.incident import IncidentCreate, CoordinatesSchema, SourceCreate
+    from app.services.submission_service import SubmissionService
+    svc = SubmissionService(db)
+
+    def mk(date, url):
+        return IncidentCreate(
+            location_description="Bahamas", country="Bahamas", classification="unprovoked",
+            incident_date=date, date_precision="exact",
+            coordinates=CoordinatesSchema(longitude=-77.3434, latitude=25.0764),
+            sources=[SourceCreate(source_type="news_article", source_url=url, source_title="t")],
+        )
+
+    a = await svc.submit_incident(mk("2026-06-25", "https://y/1"), verified_user)
+    b = await svc.submit_incident(mk("2026-07-04", "https://y/2"), verified_user)  # different date
+    assert a.case_number != b.case_number
