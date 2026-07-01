@@ -49,6 +49,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **LLM near-duplicate merge (SP4).** A backend batch job
+  (`scripts/dedupe_llm.py`, dry-run default, `--apply`) catches same-event
+  duplicate incidents the deterministic signature misses (drifted date/coords).
+  It blocks candidates by `(country, classification)` within a ±3-day window,
+  asks glm-5.2:cloud which records are the same real-world event (guardrailed:
+  data-only, conservative, returned case numbers allowlisted to the cluster),
+  and merges confirmed groups via the shared `merge_cluster` (audit
+  `action="merged_llm"`). SP3's merge logic was refactored into that shared
+  `merge_cluster`. Backend gained an Ollama Cloud client (`app/services/llm.py`,
+  `OLLAMA_*` settings, `httpx`). Run first pass manually (dry-run → review →
+  apply), then nightly cron. Spec/plan:
+  `docs/superpowers/specs/2026-07-01-osaf-llm-neardupe-design.md`,
+  `docs/superpowers/plans/2026-07-01-osaf-llm-neardupe.md`.
+
 - **Incident deduplication (SP3).** Multiple outlets covering one shark event no
   longer create duplicate incidents: a deterministic event signature (exact-date +
   coordinates within 150 m + classification, with a victim age/sex guard) attaches
