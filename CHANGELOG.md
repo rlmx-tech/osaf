@@ -41,6 +41,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Incident deduplication (SP3).** Multiple outlets covering one shark event no
+  longer create duplicate incidents: a deterministic event signature (exact-date +
+  coordinates within 150 m + classification, with a victim age/sex guard) attaches
+  syndicated coverage as extra sources to the existing incident instead of creating
+  a new one (`dedup_service.find_duplicate_incident`, wired into both the submission
+  and direct-create paths). The Shark News feed now shows one row per event
+  (`list_news` collapses promoted items by incident via a `row_number()` window). A
+  one-off `scripts/dedupe_incidents.py` (dry-run default, `--apply` to execute)
+  merges pre-existing duplicate clusters — moving sources onto the canonical (lowest
+  case number), re-pointing/pruning their `news_items`, and audit-logging each merge.
+  Spec/plan: `docs/superpowers/specs/2026-07-01-osaf-incident-dedup-design.md`,
+  `docs/superpowers/plans/2026-07-01-osaf-incident-dedup.md`.
+
 - **Shark News feed page (SP2).** Public recency-first feed at `/news` consuming
   `GET /api/v1/news`: media-list rows (thumbnail, event-type chip, title, source
   link-out, relative time, "incident" link on promoted items), event-type tabs
