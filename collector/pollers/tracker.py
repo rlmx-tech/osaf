@@ -12,7 +12,29 @@ from collector.pollers.base import BasePoller
 
 logger = logging.getLogger(__name__)
 
-TRACKING_SHARKS_URL = "https://www.trackingsharks.com"
+TRACKING_SHARKS_URL = "https://trackingsharks.com"
+
+# The site serves article links on the bare domain (www redirects to it),
+# so accept both hosts but nothing else — substring checks let through
+# social-sharer URLs that embed the domain in their query string.
+_TRACKER_HOSTS = frozenset({"trackingsharks.com", "www.trackingsharks.com"})
+
+
+def _normalize_href(href: str) -> str | None:
+    """Return an absolute trackingsharks.com URL, or None for off-site/malformed links."""
+    if not href:
+        return None
+    if not href.startswith("http"):
+        if not href.startswith("/"):
+            return None  # javascript:, mailto:, #fragment
+        href = f"{TRACKING_SHARKS_URL}{href}"
+    try:
+        url = httpx.URL(href)
+    except httpx.InvalidURL:
+        return None
+    if url.host not in _TRACKER_HOSTS:
+        return None
+    return href
 
 
 class TrackerPoller(BasePoller):
@@ -59,20 +81,8 @@ class TrackerPoller(BasePoller):
             if not link_el:
                 continue
 
-            href = link_el.get("href", "")
+            href = _normalize_href(link_el.get("href", ""))
             if not href or href in seen_urls:
-                continue
-            if not href.startswith("http"):
-                href = f"{TRACKING_SHARKS_URL}{href}"
-
-            # Only follow links on the same domain with valid URLs
-            if TRACKING_SHARKS_URL not in href:
-                continue
-
-            # Skip malformed URLs (e.g., JavaScript pseudo-protocols)
-            try:
-                httpx.URL(href)
-            except httpx.InvalidURL:
                 continue
 
             seen_urls.add(href)
