@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     youtube_interval: int = 1800      # 30 min
     reddit_interval: int = 900        # 15 min
     news_interval: int = 600          # 10 min
-    twitter_interval: int = 300       # 5 min
     tracker_interval: int = 1800      # 30 min
 
     # Dedup database
@@ -151,20 +150,6 @@ NEWS_RSS_FEEDS = [
         "name": "Google News - Shark Attack South Africa",
         "url": "https://news.google.com/rss/search?q=shark+attack+south+africa&hl=en-ZA&gl=ZA&ceid=ZA:en",
     },
-]
-
-TWITTER_ACCOUNTS = [
-    # Tier 1 - automated alerts
-    {"handle": "SLSWA", "focus": "Western Australia tagged shark alerts"},
-    {"handle": "NSWSharkSmart", "focus": "NSW Australia shark detection alerts"},
-    {"handle": "DorsalAus", "focus": "Australia community shark alerts"},
-    {"handle": "OCEARCH", "focus": "Tagged shark tracking, US East Coast"},
-    # Tier 2 - fast incident reporting
-    {"handle": "trackingsharks", "focus": "Global shark attack aggregation"},
-    {"handle": "SharkSpotters", "focus": "Cape Town shark surveillance"},
-    {"handle": "SharkSightingCA", "focus": "California shark sightings"},
-    # Tier 3 - expert context
-    {"handle": "CSULBsharklab", "focus": "SoCal shark research"},
 ]
 
 WEB_SCRAPERS = [

@@ -16,7 +16,6 @@ from collector.pollers.base import BasePoller
 from collector.pollers.news import NewsPoller
 from collector.pollers.reddit import RedditPoller
 from collector.pollers.tracker import TrackerPoller
-from collector.pollers.twitter import TwitterPoller
 from collector.pollers.youtube import YouTubePoller
 from collector.state import StateManager
 from collector.submitter import OsafSubmitter
@@ -42,7 +41,6 @@ class Scheduler:
             (NewsPoller(), settings.news_interval),
             (YouTubePoller(), settings.youtube_interval),
             (RedditPoller(), settings.reddit_interval),
-            (TwitterPoller(), settings.twitter_interval),
             (TrackerPoller(), settings.tracker_interval),
         ]
 
