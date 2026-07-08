@@ -1,9 +1,19 @@
-"""Reddit poller — monitors subreddits for shark incident posts."""
+"""Reddit poller — monitors subreddits for shark incident posts via RSS.
+
+Reddit returns 403 for unauthenticated ``.json`` requests from datacenter
+IPs and rate-limits anonymous clients to roughly one request per rate
+window (``x-ratelimit-remaining`` drops to 0 after a single call). Twelve
+sequential per-subreddit requests therefore never complete. Instead we
+fetch ONE multireddit Atom feed (``r/sub1+sub2+.../new.rss``) per cycle,
+which stays within the anonymous quota.
+"""
 
 import logging
 from datetime import datetime, timezone
 
+import feedparser
 import httpx
+from bs4 import BeautifulSoup
 
 from collector.config import REDDIT_KEYWORDS, REDDIT_SUBREDDITS, settings
 from collector.models import RawItem, SourcePlatform
@@ -12,17 +22,70 @@ from collector.pollers.base import BasePoller
 logger = logging.getLogger(__name__)
 
 
-def _matches_keywords(title: str, selftext: str) -> bool:
-    text = f"{title} {selftext}".lower()
+def _matches_keywords(title: str, body: str) -> bool:
+    text = f"{title} {body}".lower()
     return any(kw in text for kw in REDDIT_KEYWORDS)
 
 
-class RedditPoller(BasePoller):
-    """Polls Reddit using the public JSON API (no auth required for read-only).
+def _entry_subreddit(entry) -> str | None:
+    """Subreddit name from the entry's Atom category, falling back to the permalink."""
+    for tag in entry.get("tags", []) or []:
+        term = tag.get("term")
+        if term:
+            return term
+    link = entry.get("link", "")
+    parts = link.split("/r/", 1)
+    if len(parts) == 2:
+        return parts[1].split("/", 1)[0] or None
+    return None
 
-    Falls back to asyncpraw if client_id is configured, but the JSON API
-    is simpler and sufficient for monitoring public subreddits.
-    """
+
+def _parse_feed(feed_text: str) -> list[RawItem]:
+    """Parse a Reddit multireddit Atom feed into keyword-matched RawItems."""
+    items: list[RawItem] = []
+    feed = feedparser.parse(feed_text)
+
+    for entry in feed.entries:
+        title = entry.get("title", "")
+        link = entry.get("link", "")
+        if not title or not link:
+            continue
+
+        html = entry.get("summary", "") or ""
+        body = BeautifulSoup(html, "lxml").get_text(separator="\n", strip=True)
+
+        if not _matches_keywords(title, body):
+            continue
+
+        subreddit = _entry_subreddit(entry)
+
+        published = None
+        parsed_time = entry.get("published_parsed") or entry.get("updated_parsed")
+        if parsed_time:
+            published = datetime(*parsed_time[:6], tzinfo=timezone.utc)
+
+        author = entry.get("author") or None
+        if author:
+            author = author.removeprefix("/u/")
+
+        items.append(
+            RawItem(
+                source_platform=SourcePlatform.REDDIT,
+                source_name=f"r/{subreddit}" if subreddit else "reddit",
+                source_url=link,
+                title=title,
+                content=f"{title}\n\n{body}",
+                published_at=published,
+                author=author,
+                extra={"subreddit": subreddit},
+            )
+        )
+
+    return items
+
+
+class RedditPoller(BasePoller):
+    """Polls all monitored subreddits with a single multireddit RSS request."""
 
     name = "reddit"
 
@@ -34,60 +97,23 @@ class RedditPoller(BasePoller):
         )
 
     async def poll(self) -> list[RawItem]:
-        items: list[RawItem] = []
+        multi = "+".join(REDDIT_SUBREDDITS)
+        url = f"https://www.reddit.com/r/{multi}/new.rss?limit=100"
 
-        for subreddit in REDDIT_SUBREDDITS:
-            url = f"https://www.reddit.com/r/{subreddit}/new.json?limit=25"
-            try:
-                resp = await self._client.get(url)
-                resp.raise_for_status()
-                data = resp.json()
-            except (httpx.HTTPError, ValueError):
-                logger.warning("reddit: failed to fetch r/%s", subreddit)
-                continue
-
-            posts = data.get("data", {}).get("children", [])
-            for post_wrapper in posts:
-                post = post_wrapper.get("data", {})
-                title = post.get("title", "")
-                selftext = post.get("selftext", "")
-                post_url = post.get("url", "")
-                permalink = post.get("permalink", "")
-
-                if not _matches_keywords(title, selftext):
-                    continue
-
-                published = None
-                created_utc = post.get("created_utc")
-                if created_utc:
-                    published = datetime.fromtimestamp(created_utc, tz=timezone.utc)
-
-                # For link posts, include the linked URL in content
-                content = f"{title}\n\n{selftext}"
-                if post_url and not post_url.startswith("https://www.reddit.com"):
-                    content += f"\n\nLinked article: {post_url}"
-
-                full_url = f"https://www.reddit.com{permalink}" if permalink else post_url
-
-                items.append(
-                    RawItem(
-                        source_platform=SourcePlatform.REDDIT,
-                        source_name=f"r/{subreddit}",
-                        source_url=full_url,
-                        title=title,
-                        content=content,
-                        published_at=published,
-                        author=post.get("author"),
-                        extra={
-                            "subreddit": subreddit,
-                            "score": post.get("score", 0),
-                            "num_comments": post.get("num_comments", 0),
-                            "linked_url": post_url if post_url != full_url else None,
-                        },
-                    )
+        try:
+            resp = await self._client.get(url)
+            if resp.status_code == 429:
+                logger.warning(
+                    "reddit: rate limited, retry window %ss — skipping cycle",
+                    resp.headers.get("x-ratelimit-reset", "?"),
                 )
+                return []
+            resp.raise_for_status()
+        except httpx.HTTPError:
+            logger.warning("reddit: failed to fetch multireddit feed")
+            return []
 
-        return items
+        return _parse_feed(resp.text)
 
     async def close(self) -> None:
         await self._client.aclose()
