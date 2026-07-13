@@ -69,3 +69,24 @@ class TestGenerateCaseNumber:
         db = _mock_db(5)
         await generate_case_number(db)
         assert db.execute.call_count == 1
+
+    async def test_postgres_uses_atomic_persistent_counter(self):
+        max_result = MagicMock()
+        max_result.scalar_one_or_none.return_value = 6573
+        insert_result = MagicMock()
+        update_result = MagicMock()
+        update_result.scalar_one.return_value = 6574
+
+        db = AsyncMock()
+        bind = MagicMock()
+        bind.dialect.name = "postgresql"
+        db.get_bind = MagicMock(return_value=bind)
+        db.execute = AsyncMock(
+            side_effect=[max_result, insert_result, update_result]
+        )
+
+        result = await generate_case_number(db)
+
+        year = date.today().year
+        assert result == f"OSAF-{year}-6574"
+        assert db.execute.call_count == 3
