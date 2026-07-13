@@ -20,6 +20,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
+def _auth_headers(login: httpx.Response) -> dict[str, str]:
+    """Promote the secure login cookie for internal HTTP API requests."""
+    token = login.cookies.get("access_token")
+    if not token:
+        raise RuntimeError("login response did not include an access token")
+    return {"Authorization": f"Bearer {token}"}
+
+
 @dataclass(frozen=True)
 class Correction:
     latitude: float | None
@@ -127,6 +135,7 @@ async def main(*, apply: bool = False) -> None:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         login.raise_for_status()
+        headers = _auth_headers(login)
         incidents = await _incident_index(client)
 
         updated = missing = failed = 0
@@ -143,7 +152,9 @@ async def main(*, apply: bool = False) -> None:
                 logger.info("%s WOULD %s", case_number, action)
                 continue
             response = await client.put(
-                f"/incidents/{incident['id']}", json=correction.payload()
+                f"/incidents/{incident['id']}",
+                json=correction.payload(),
+                headers=headers,
             )
             if response.status_code == 200:
                 logger.info("%s: %s", case_number, action)

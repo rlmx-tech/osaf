@@ -1,5 +1,17 @@
+import httpx
+
 from collector.coastline import inland_distance_km
-from collector.repair_geolocation_2026 import CORRECTIONS
+from collector.repair_geolocation_2026 import CORRECTIONS, _auth_headers
+
+
+def test_secure_login_cookie_is_promoted_to_bearer_header():
+    response = httpx.Response(
+        200,
+        headers={"set-cookie": "access_token=test-token; Secure; HttpOnly"},
+        request=httpx.Request("POST", "http://backend/api/v1/auth/login"),
+    )
+
+    assert _auth_headers(response) == {"Authorization": "Bearer test-token"}
 
 
 def test_repair_manifest_has_unique_expected_scope():
