@@ -6,19 +6,28 @@ from datetime import datetime, timezone
 import feedparser
 import httpx
 
-from collector.config import YOUTUBE_CHANNELS, YOUTUBE_KEYWORDS
+from collector.config import YOUTUBE_CHANNELS
 from collector.models import RawItem, SourcePlatform
 from collector.pollers.base import BasePoller
+from collector.relevance import is_shark_relevant
 
 logger = logging.getLogger(__name__)
 
 YOUTUBE_RSS_BASE = "https://www.youtube.com/feeds/videos.xml?channel_id="
 
 
-def _matches_keywords(title: str, description: str) -> bool:
-    """Check if title or description contains any shark-related keyword."""
-    text = f"{title} {description}".lower()
-    return any(kw in text for kw in YOUTUBE_KEYWORDS)
+def _matches_keywords(
+    title: str,
+    description: str,
+    *,
+    trusted_shark_source: bool = False,
+) -> bool:
+    """Apply the shared recall-oriented shark relevance filter."""
+    return is_shark_relevant(
+        title,
+        description,
+        trusted_shark_source=trusted_shark_source,
+    )
 
 
 class YouTubePoller(BasePoller):
@@ -52,7 +61,11 @@ class YouTubePoller(BasePoller):
                 elif hasattr(entry, "summary"):
                     description = entry.get("summary", "")
 
-                if not _matches_keywords(title, description):
+                if not _matches_keywords(
+                    title,
+                    description,
+                    trusted_shark_source=True,
+                ):
                     continue
 
                 published = None
@@ -69,7 +82,10 @@ class YouTubePoller(BasePoller):
                         content=f"{title}\n\n{description}",
                         published_at=published,
                         author=channel["name"],
-                        extra={"channel_id": channel["channel_id"]},
+                        extra={
+                            "channel_id": channel["channel_id"],
+                            "trusted_shark_source": True,
+                        },
                     )
                 )
 

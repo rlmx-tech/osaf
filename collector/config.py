@@ -86,20 +86,6 @@ YOUTUBE_CHANNELS = [
     },
 ]
 
-YOUTUBE_KEYWORDS = [
-    "shark attack",
-    "shark bite",
-    "shark sighting",
-    "shark encounter",
-    "shark near surfer",
-    "shark near swimmer",
-    "great white shark",
-    "bull shark attack",
-    "tiger shark attack",
-    "shark drone footage",
-    "shark beach closure",
-]
-
 REDDIT_SUBREDDITS = [
     "sharks",
     "surfing",
@@ -113,18 +99,6 @@ REDDIT_SUBREDDITS = [
     "hawaii",
     "SouthAfrica",
     "newzealand",
-]
-
-REDDIT_KEYWORDS = [
-    "shark attack",
-    "shark bite",
-    "shark sighting",
-    "shark encounter",
-    "shark near",
-    "bitten by shark",
-    "shark warning",
-    "beach closed shark",
-    "shark spotted",
 ]
 
 NEWS_RSS_FEEDS = [

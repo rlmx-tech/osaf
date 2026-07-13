@@ -57,3 +57,29 @@ def test_html_stripped_from_content():
 def test_empty_or_garbage_feed_returns_nothing():
     assert _parse_feed("") == []
     assert _parse_feed("<html><body>Too Many Requests</body></html>") == []
+
+
+def test_species_name_without_shark_is_matched():
+    feed = ATOM_FIXTURE.replace(
+        "NorCal surf advisories",
+        "Great white spotted off Esperance",
+    )
+
+    items = _parse_feed(feed)
+
+    assert any(item.title == "Great white spotted off Esperance" for item in items)
+
+
+def test_sharks_subreddit_uses_trusted_incident_context():
+    feed = ATOM_FIXTURE.replace(
+        "Shark attack at New Smyrna Beach",
+        "Matawan River Attacks Revisited - Jaws",
+    ).replace(
+        "Witnessed a shark attack at New Smyrna Beach this morning, surfer bitten on the leg.",
+        "A historical case discussion.",
+    )
+
+    items = _parse_feed(feed)
+
+    matched = next(item for item in items if item.title.startswith("Matawan River"))
+    assert matched.extra["trusted_shark_source"] is True

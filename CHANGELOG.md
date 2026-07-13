@@ -7,6 +7,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Collector source filtering now preserves contextual shark reports.** Curated
+  shark channels such as SharksHappen may omit the word "shark" from titles
+  like "Matawan River Attacks Revisited." Trusted-source incident language now
+  supplies that context, while unrelated videos remain excluded. YouTube and
+  Reddit also share the broader species-aware relevance vocabulary, and trust
+  metadata survives the pipeline's second relevance gate.
+
 - **Shark News now sorts by publication date, newest first.** The feed previously
   sorted by collector capture time, causing backfilled older stories to appear
   above newer reporting. Items without a publication timestamp fall back to

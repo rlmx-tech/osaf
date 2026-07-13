@@ -11,8 +11,35 @@ SHARK_RELEVANCE_TERMS: frozenset[str] = frozenset(
     {"shark", *(k.lower() for k in COMMON_TO_SCIENTIFIC.keys())}
 )
 
+# A curated shark source supplies the missing subject when a headline assumes
+# audience context (for example, "Recent Australia Attacks Discussion"). These
+# terms are deliberately used only for trusted sources because words such as
+# "attack" are far too broad on the open web.
+TRUSTED_SOURCE_INCIDENT_TERMS: frozenset[str] = frozenset(
+    {
+        "attack",
+        "bite",
+        "bitten",
+        "encounter",
+        "jaws",
+        "mauled",
+        "sighting",
+        "spotted",
+        "beach closure",
+    }
+)
 
-def is_shark_relevant(title: str, content: str) -> bool:
+
+def is_shark_relevant(
+    title: str,
+    content: str,
+    *,
+    trusted_shark_source: bool = False,
+) -> bool:
     """True if the text plausibly concerns a shark (recall-favoring)."""
     text = f"{title or ''} {content or ''}".lower()
-    return any(term in text for term in SHARK_RELEVANCE_TERMS)
+    if any(term in text for term in SHARK_RELEVANCE_TERMS):
+        return True
+    return trusted_shark_source and any(
+        term in text for term in TRUSTED_SOURCE_INCIDENT_TERMS
+    )

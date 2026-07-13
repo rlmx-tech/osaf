@@ -58,6 +58,23 @@ async def test_shark_news_only_captured_not_promoted(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_trusted_shark_source_context_reaches_capture_gate(monkeypatch):
+    monkeypatch.setattr(pipeline, "extract_incident", AsyncMock(return_value=None))
+    news = FakeNews()
+    raw = _raw(
+        "https://u/context",
+        "Matawan River Attacks Revisited - Jaws",
+        "",
+    )
+    raw.extra["trusted_shark_source"] = True
+
+    stats = await pipeline.process_items([raw], news)
+
+    assert stats["captured_news"] == 1
+    assert stats["skipped_not_shark"] == 0
+
+
+@pytest.mark.asyncio
 async def test_sighting_becomes_candidate_without_auto_publish(monkeypatch):
     inc = ExtractedIncident(location_description="Bondi", country="Australia",
                             classification="sighting", source_url="https://u/3",

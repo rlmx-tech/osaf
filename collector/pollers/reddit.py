@@ -15,16 +15,20 @@ import feedparser
 import httpx
 from bs4 import BeautifulSoup
 
-from collector.config import REDDIT_KEYWORDS, REDDIT_SUBREDDITS, settings
+from collector.config import REDDIT_SUBREDDITS, settings
 from collector.models import RawItem, SourcePlatform
 from collector.pollers.base import BasePoller
+from collector.relevance import is_shark_relevant
 
 logger = logging.getLogger(__name__)
 
 
-def _matches_keywords(title: str, body: str) -> bool:
-    text = f"{title} {body}".lower()
-    return any(kw in text for kw in REDDIT_KEYWORDS)
+def _matches_keywords(title: str, body: str, subreddit: str | None = None) -> bool:
+    return is_shark_relevant(
+        title,
+        body,
+        trusted_shark_source=(subreddit or "").lower() == "sharks",
+    )
 
 
 def _entry_subreddit(entry) -> str | None:
@@ -54,10 +58,10 @@ def _parse_feed(feed_text: str) -> list[RawItem]:
         html = entry.get("summary", "") or ""
         body = BeautifulSoup(html, "lxml").get_text(separator="\n", strip=True)
 
-        if not _matches_keywords(title, body):
-            continue
-
         subreddit = _entry_subreddit(entry)
+        trusted_shark_source = (subreddit or "").lower() == "sharks"
+        if not _matches_keywords(title, body, subreddit):
+            continue
 
         published = None
         parsed_time = entry.get("published_parsed") or entry.get("updated_parsed")
@@ -77,7 +81,10 @@ def _parse_feed(feed_text: str) -> list[RawItem]:
                 content=f"{title}\n\n{body}",
                 published_at=published,
                 author=author,
-                extra={"subreddit": subreddit},
+                extra={
+                    "subreddit": subreddit,
+                    "trusted_shark_source": trusted_shark_source,
+                },
             )
         )
 

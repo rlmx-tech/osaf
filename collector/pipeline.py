@@ -91,7 +91,13 @@ async def process_items(
         job_id = capture["job_id"]
 
         # GATE 1 — shark-relevant at all?
-        if not is_shark_relevant(raw.title, raw.content):
+        if not is_shark_relevant(
+            raw.title,
+            raw.content,
+            trusted_shark_source=bool(
+                raw.extra and raw.extra.get("trusted_shark_source")
+            ),
+        ):
             stats["skipped_not_shark"] += 1
             await news_client.complete_without_incident(job_id, "not_relevant", "not_shark")
             continue
