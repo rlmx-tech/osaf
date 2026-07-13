@@ -8,7 +8,13 @@ where substring fuzzy-matching reclassified provoked incidents as unprovoked.
 import pytest
 
 from collector.config import VALID_ACTIVITIES, VALID_CLASSIFICATIONS, VALID_SEVERITIES
-from collector.extractor import _normalize_country, _validate_field
+from collector.extractor import (
+    _normalize_bool,
+    _normalize_country,
+    _validate_field,
+    apply_corrections,
+)
+from collector.models import ExtractedIncident, VerificationResult
 
 
 @pytest.mark.parametrize(
@@ -55,3 +61,33 @@ def test_validate_field(value, options, expected):
 )
 def test_normalize_country(value, expected):
     assert _normalize_country(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (True, True),
+        (False, False),
+        ("true", True),
+        ("FALSE", False),
+        (None, False),
+        ("unknown", False),
+    ],
+)
+def test_normalize_bool(value, expected):
+    assert _normalize_bool(value) is expected
+
+
+def test_null_fatal_correction_preserves_existing_boolean():
+    incident = ExtractedIncident(
+        location_description="Jones Beach",
+        country="United States",
+        fatal=False,
+        source_url="https://example.test/report",
+        source_title="Report",
+    )
+    verification = VerificationResult(corrections={"fatal": None})
+
+    corrected = apply_corrections(incident, verification)
+
+    assert corrected.fatal is False

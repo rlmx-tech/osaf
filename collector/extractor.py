@@ -11,7 +11,7 @@ task is structured extraction from prose news/social text, not code generation.
 import json
 import logging
 import re
-from datetime import date, datetime, timezone
+from datetime import date
 
 import httpx
 
@@ -21,7 +21,6 @@ from collector.config import (
     COUNTRY_ALIASES,
     VALID_ACTIVITIES,
     VALID_CLASSIFICATIONS,
-    VALID_REPORT_SOURCES,
     VALID_SEVERITIES,
     settings,
 )
@@ -187,6 +186,21 @@ def _validate_field(value: str | None, valid_options: list[str]) -> str | None:
     return None
 
 
+def _normalize_bool(value: object, default: bool = False) -> bool:
+    """Normalize nullable/model-generated booleans without truthy-string bugs."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized == "true":
+            return True
+        if normalized == "false":
+            return False
+    if value in (0, 1):
+        return bool(value)
+    return default
+
+
 def _parse_json_response(text: str) -> dict | None:
     """Extract JSON from Ollama response, handling markdown code blocks."""
     # Try direct parse first
@@ -341,7 +355,7 @@ async def extract_incident(raw: RawItem) -> ExtractedIncident | None:
         victim_name=data.get("victim_name"),
         victim_age=data.get("victim_age"),
         victim_sex=data.get("victim_sex"),
-        fatal=data.get("fatal", False),
+        fatal=_normalize_bool(data.get("fatal")),
         latitude=latitude,
         longitude=longitude,
         description=data.get("description"),
@@ -413,6 +427,8 @@ def apply_corrections(
             corrected = _validate_field(value, VALID_ACTIVITIES)
             if corrected:
                 update_data["victim_activity"] = corrected
+        elif field == "fatal":
+            update_data["fatal"] = _normalize_bool(value, default=incident.fatal)
         elif field in _CORRECTABLE_FIELDS:
             update_data[field] = value
         else:
