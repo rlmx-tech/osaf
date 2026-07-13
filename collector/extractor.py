@@ -315,7 +315,7 @@ async def extract_incident(raw: RawItem) -> ExtractedIncident | None:
         logger.debug("extractor: using published_at as fallback date for %s", raw.source_url)
 
     # Geocode location via Nominatim (accurate coastline coordinates)
-    location_desc = data.get("location_description", raw.title)
+    location_desc = data.get("location_description") or raw.title
     country = _normalize_country(data.get("country")) or "Unknown"
     state_province = data.get("state_province")
     body_of_water = data.get("body_of_water")

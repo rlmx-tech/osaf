@@ -145,9 +145,13 @@ async def process_items(
                     state.mark_skipped(raw.dedup_key, f"verification_rejected: {verification.notes}")
                     continue
                 logger.warning(
-                    "pipeline: verifier uncertain (%.0f%%), submitting anyway: %s",
+                    "pipeline: verifier uncertain (%.0f%%), downgrading report: %s",
                     verification.confidence * 100, verification.notes,
                 )
+                if incident.classification != "sighting":
+                    incident = incident.model_copy(
+                        update={"classification": "unverified_report"}
+                    )
             incident = apply_corrections(incident, verification)
 
         event_type = derive_event_type(incident)

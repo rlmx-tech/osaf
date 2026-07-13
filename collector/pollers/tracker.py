@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 
 import httpx
 from bs4 import BeautifulSoup
@@ -18,6 +18,9 @@ TRACKING_SHARKS_URL = "https://trackingsharks.com"
 # so accept both hosts but nothing else — substring checks let through
 # social-sharer URLs that embed the domain in their query string.
 _TRACKER_HOSTS = frozenset({"trackingsharks.com", "www.trackingsharks.com"})
+_ARCHIVE_PATH = re.compile(
+    r"^/(?:recent-articles|(?:all-)?20\d{2}(?:-fatal)?-shark-attack(?:s|-map)[^/]*)/?$"
+)
 
 
 def _normalize_href(href: str) -> str | None:
@@ -35,6 +38,15 @@ def _normalize_href(href: str) -> str | None:
     if url.host not in _TRACKER_HOSTS:
         return None
     return href
+
+
+def _is_incident_article(url: str) -> bool:
+    """Reject index, map, and yearly roundup pages that contain many incidents."""
+    try:
+        path = httpx.URL(url).path.rstrip("/") or "/"
+    except httpx.InvalidURL:
+        return False
+    return path != "/" and not _ARCHIVE_PATH.match(path)
 
 
 class TrackerPoller(BasePoller):
@@ -82,7 +94,7 @@ class TrackerPoller(BasePoller):
                 continue
 
             href = _normalize_href(link_el.get("href", ""))
-            if not href or href in seen_urls:
+            if not href or not _is_incident_article(href) or href in seen_urls:
                 continue
 
             seen_urls.add(href)

@@ -108,3 +108,34 @@ async def test_news_capture_without_id_is_not_counted(monkeypatch):
     )
 
     assert stats["captured_news"] == 0
+
+
+@pytest.mark.asyncio
+async def test_uncertain_attack_is_downgraded_before_submission(monkeypatch):
+    inc = ExtractedIncident(
+        location_description="Jones Beach",
+        country="United States",
+        classification="unprovoked",
+        source_url="https://u/6",
+        source_title="t",
+        confidence=0.9,
+    )
+    monkeypatch.setattr(pipeline, "extract_incident", AsyncMock(return_value=inc))
+    monkeypatch.setattr(
+        pipeline,
+        "verify_incident",
+        AsyncMock(return_value=VerificationResult(is_valid=False, confidence=0.3)),
+    )
+    submitter = AsyncMock()
+    submitter.submit = AsyncMock(return_value="OSAF-2026-0008")
+
+    stats = await pipeline.process_items(
+        [_raw("https://u/6", "Swimmer reports shark bite", "headline only")],
+        FakeState(),
+        submitter,
+        FakeNews(),
+    )
+
+    assert stats["submitted"] == 1
+    submitted_incident = submitter.submit.await_args.args[0]
+    assert submitted_incident.classification == "unverified_report"

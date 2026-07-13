@@ -1,4 +1,4 @@
-from collector.pollers.tracker import _normalize_href
+from collector.pollers.tracker import _is_incident_article, _normalize_href
 
 
 def test_bare_domain_article_kept():
@@ -36,3 +36,17 @@ def test_javascript_pseudo_protocol_rejected():
 def test_empty_and_fragment_rejected():
     assert _normalize_href("") is None
     assert _normalize_href("#comments") is None
+
+
+def test_incident_article_path_kept():
+    assert _is_incident_article(
+        "https://trackingsharks.com/fisherman-loses-arm-to-tiger-shark-attack-in-jamaica/"
+    )
+
+
+def test_archive_and_map_pages_rejected():
+    assert not _is_incident_article("https://trackingsharks.com/recent-articles/")
+    assert not _is_incident_article("https://trackingsharks.com/2026-shark-attack-map/")
+    assert not _is_incident_article(
+        "https://trackingsharks.com/all-2024-fatal-shark-attacks/"
+    )
