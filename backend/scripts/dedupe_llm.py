@@ -82,6 +82,7 @@ async def candidate_clusters(db, window_days: int = 3, max_cluster: int = 10):
         await db.execute(
             select(Incident)
             .options(selectinload(Incident.sources))
+            .execution_options(populate_existing=True)
             .where(Incident.date_precision == "exact", Incident.incident_date.isnot(None))
             .order_by(Incident.country, Incident.classification, Incident.incident_date)
         )

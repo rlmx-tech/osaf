@@ -23,13 +23,37 @@ The ISAF is the world's only scientifically documented comprehensive shark attac
 | Auth | JWT (role-based) |
 | Containers | Docker Compose |
 
-## Features (Planned)
+## Features
 
 - Interactive world map with classification-colored markers and clustering
 - Searchable/filterable incident database
 - Trend dashboards and statistics (by year, country, species, activity)
 - Public incident submission with admin review queue
+- Durable collector jobs with leases, retries, and dead-letter visibility
+- Immutable source evidence and versioned AI extraction provenance
+- Reviewable incident candidates linked to canonical published records
 - ISAF-compatible classification system
+
+## Evidence architecture
+
+```text
+Pollers and submitted URLs
+          ↓
+Immutable source documents
+          ↓
+Durable leased collection jobs
+          ↓
+Versioned extracted observations
+          ↓
+Incident candidates and review
+          ↓
+Canonical published incidents
+```
+
+One source may produce multiple observations over time, and multiple sources
+may support one incident candidate. AI output is retained as evidence with its
+model, prompt version, confidence, and verification result; the canonical
+incident remains a separate publication record.
 
 ## Classification System
 

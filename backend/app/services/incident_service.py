@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from geoalchemy2.functions import ST_X, ST_Y
-from sqlalchemy import asc, desc, func, literal_column, or_, select, text
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 

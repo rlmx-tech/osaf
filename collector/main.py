@@ -18,7 +18,6 @@ from collector.pollers.reddit import RedditPoller
 from collector.pollers.tracker import TrackerPoller
 from collector.pollers.youtube import YouTubePoller
 from collector.state import StateManager
-from collector.submitter import OsafSubmitter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,7 +32,6 @@ class Scheduler:
 
     def __init__(self) -> None:
         self._state = StateManager()
-        self._submitter = OsafSubmitter()
         self._news = NewsClient()
         self._running = True
 
@@ -52,14 +50,14 @@ class Scheduler:
             items = await poller.safe_poll()
 
             if items:
-                stats = await process_items(items, self._state, self._submitter, self._news)
+                stats = await process_items(items, self._news)
                 logger.info(
-                    "scheduler: %s batch — %d processed, %d captured, %d submitted, "
-                    "%d skipped, %d retryable, %d errors",
+                    "scheduler: %s batch — %d processed, %d captured, "
+                    "%d candidates, %d skipped, %d retryable, %d errors",
                     poller.name,
                     stats["processed"],
                     stats["captured_news"],
-                    stats["submitted"],
+                    stats["candidates"],
                     stats["skipped_seen"] + stats["skipped_not_shark"]
                     + stats["skipped_irrelevant"] + stats["skipped_low_confidence"]
                     + stats["skipped_duplicate"],
@@ -85,10 +83,6 @@ class Scheduler:
         logger.info("=" * 60)
 
         # Authenticate with OSAF API
-        if not await self._submitter.authenticate():
-            logger.error("Failed to authenticate with OSAF API — check credentials")
-            sys.exit(1)
-
         if not await self._news.authenticate():
             logger.error("Failed to authenticate news client with OSAF API")
             sys.exit(1)
@@ -113,7 +107,6 @@ class Scheduler:
         for poller, _ in self._pollers:
             if hasattr(poller, "close"):
                 await poller.close()
-        await self._submitter.close()
         await self._news.close()
         logger.info("scheduler: cleanup complete")
 

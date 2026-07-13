@@ -3,11 +3,14 @@ import { useNavigate } from "react-router-dom";
 import client from "../api/client";
 import { CLASSIFICATION_LABELS, CLASSIFICATION_COLORS } from "../utils/constants";
 import { formatDate } from "../utils/formatters";
+import { safeUrl } from "../utils/safeUrl";
 
 export default function AdminPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState("queue");
   const [submissions, setSubmissions] = useState(null);
+  const [candidates, setCandidates] = useState(null);
+  const [ingestionHealth, setIngestionHealth] = useState(null);
   const [auditLog, setAuditLog] = useState(null);
   const [users, setUsers] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -40,6 +43,23 @@ export default function AdminPage() {
     }
   }, []);
 
+  const fetchCandidates = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [candidatesRes, healthRes] = await Promise.all([
+        client.get("/admin/candidates?status=needs_review"),
+        client.get("/admin/ingestion-health"),
+      ]);
+      setCandidates(candidatesRes.data);
+      setIngestionHealth(healthRes.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to load evidence queue");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -55,9 +75,10 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (tab === "queue") fetchQueue();
+    if (tab === "candidates") fetchCandidates();
     if (tab === "audit") fetchAuditLog();
     if (tab === "users") fetchUsers();
-  }, [tab, fetchQueue, fetchAuditLog, fetchUsers]);
+  }, [tab, fetchQueue, fetchCandidates, fetchAuditLog, fetchUsers]);
 
   const handleRoleChange = async (userId, newRole) => {
     setActionLoading(userId);
@@ -83,6 +104,19 @@ export default function AdminPage() {
     }
   };
 
+  const handleCandidateAction = async (id, action) => {
+    setActionLoading(id);
+    try {
+      await client.put(`/admin/candidates/${id}/${action}`, {});
+      fetchCandidates();
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : detail?.message || `Failed to ${action} candidate`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto bg-gray-900 text-white">
       <div className="max-w-6xl mx-auto px-6 py-6">
@@ -92,6 +126,7 @@ export default function AdminPage() {
         <div className="flex gap-1 mb-6 border-b border-gray-700">
           {[
             { key: "queue", label: "Review Queue" },
+            { key: "candidates", label: "Evidence Queue" },
             { key: "users", label: "Users" },
             { key: "audit", label: "Audit Log" },
           ].map((t) => (
@@ -108,6 +143,11 @@ export default function AdminPage() {
               {t.key === "queue" && submissions?.meta?.total > 0 && (
                 <span className="ml-2 bg-amber-600 text-white text-xs px-1.5 py-0.5 rounded-full">
                   {submissions.meta.total}
+                </span>
+              )}
+              {t.key === "candidates" && candidates?.meta?.total > 0 && (
+                <span className="ml-2 bg-cyan-700 text-white text-xs px-1.5 py-0.5 rounded-full">
+                  {candidates.meta.total}
                 </span>
               )}
             </button>
@@ -201,6 +241,103 @@ export default function AdminPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Evidence candidates produced by the durable collector pipeline */}
+        {!loading && tab === "candidates" && candidates && (
+          <>
+            {ingestionHealth && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                {[
+                  ["Needs review", candidates.meta.total],
+                  ["Retrying", ingestionHealth.retrying],
+                  ["Dead letter", ingestionHealth.dead_letter],
+                  ["Completed", ingestionHealth.completed],
+                ].map(([label, value]) => (
+                  <div key={label} className="bg-gray-800 rounded px-3 py-2">
+                    <p className="text-xs text-gray-500">{label}</p>
+                    <p className="text-lg font-semibold text-gray-200">{value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {candidates.data.length === 0 ? (
+              <div className="text-center text-gray-500 py-16">
+                <p className="text-lg">No incident candidates need review</p>
+                <p className="text-sm mt-1">The evidence queue is clear.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {candidates.data.map((candidate) => {
+                  const payload = candidate.observation?.payload || {};
+                  const confidence = candidate.observation?.confidence;
+                  return (
+                    <div key={candidate.id} className="bg-gray-800 rounded-lg p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <span className="text-xs text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded">
+                              {candidate.observation?.event_type || "candidate"}
+                            </span>
+                            {payload.classification && (
+                              <span className="text-xs text-gray-300">
+                                {CLASSIFICATION_LABELS[payload.classification] || payload.classification}
+                              </span>
+                            )}
+                            {confidence != null && (
+                              <span className="text-xs text-gray-500">
+                                {Math.round(confidence * 100)}% extraction confidence
+                              </span>
+                            )}
+                            <span className="text-xs text-gray-600">
+                              {candidate.observation_count} supporting observation{candidate.observation_count === 1 ? "" : "s"}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-200">
+                            {payload.location_description || "Location uncertain"}
+                            {payload.country ? ` — ${payload.country}` : ""}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {formatDate(payload.incident_date)}
+                            {payload.description ? ` — ${payload.description.substring(0, 180)}` : ""}
+                          </p>
+                          {candidate.source && safeUrl(candidate.source.source_url) && (
+                            <a
+                              href={safeUrl(candidate.source.source_url)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block text-xs text-blue-400 hover:text-blue-300 mt-2 truncate"
+                            >
+                              {candidate.source.source_name}: {candidate.source.title}
+                            </a>
+                          )}
+                          <p className="text-xs text-gray-600 mt-1">
+                            {candidate.match_rationale}
+                          </p>
+                        </div>
+                        <div className="flex gap-2 flex-shrink-0">
+                          <button
+                            onClick={() => handleCandidateAction(candidate.id, "publish")}
+                            disabled={actionLoading === candidate.id}
+                            className="bg-green-600 text-white text-xs px-3 py-1.5 rounded hover:bg-green-700 disabled:opacity-50"
+                          >
+                            Publish
+                          </button>
+                          <button
+                            onClick={() => handleCandidateAction(candidate.id, "reject")}
+                            disabled={actionLoading === candidate.id}
+                            className="bg-red-600 text-white text-xs px-3 py-1.5 rounded hover:bg-red-700 disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>

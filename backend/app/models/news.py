@@ -30,6 +30,9 @@ class NewsItem(Base):
     promoted_incident_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("incidents.id", ondelete="SET NULL")
     )
+    source_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("source_documents.id", ondelete="SET NULL")
+    )
 
     __table_args__ = (
         CheckConstraint("event_type IN ('attack', 'sighting', 'news')", name="valid_event_type"),

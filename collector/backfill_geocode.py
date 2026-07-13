@@ -14,7 +14,7 @@ import os
 
 import httpx
 
-from collector.geocoder import geocode_incident, haversine_km, _in_state_bounds
+from collector.geocoder import geocode_incident, haversine_km
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger(__name__)

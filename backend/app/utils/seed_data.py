@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.database import async_session, engine, Base
+from app.database import async_session
 from app.models.incident import Incident
 from app.models.source import IncidentSource
 from app.models.species import SharkSpecies

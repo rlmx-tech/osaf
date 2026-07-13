@@ -8,10 +8,14 @@ from app.database import get_db
 from app.models.user import User
 from app.services.auth_service import require_role
 from app.services.submission_service import SubmissionService
+from app.services.ingestion_service import IngestionService
 
 router = APIRouter()
 
 _VALID_ROLES = frozenset({"admin", "verified_contributor", "public"})
+_VALID_CANDIDATE_STATUSES = frozenset(
+    {"needs_review", "approved", "rejected", "published", "merged"}
+)
 
 
 class ReviewAction(BaseModel):
@@ -21,6 +25,50 @@ class ReviewAction(BaseModel):
 class RoleUpdate(BaseModel):
     role: str = Field(..., max_length=30)
 
+
+@router.get("/ingestion-health")
+async def ingestion_health(
+    admin: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await IngestionService(db).health_summary()
+
+
+@router.get("/candidates")
+async def list_incident_candidates(
+    status: str | None = Query("needs_review"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
+    admin: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    if status is not None and status not in _VALID_CANDIDATE_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid candidate status")
+    return await IngestionService(db).list_candidates(status, page, per_page)
+
+
+@router.put("/candidates/{candidate_id}/publish")
+async def publish_incident_candidate(
+    candidate_id: UUID,
+    body: ReviewAction = ReviewAction(),
+    admin: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await IngestionService(db).review_candidate(
+        candidate_id, "publish", admin, body.notes
+    )
+
+
+@router.put("/candidates/{candidate_id}/reject")
+async def reject_incident_candidate(
+    candidate_id: UUID,
+    body: ReviewAction = ReviewAction(),
+    admin: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    return await IngestionService(db).review_candidate(
+        candidate_id, "reject", admin, body.notes
+    )
 
 @router.get("/submissions")
 async def list_pending_submissions(

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.incident import Incident
 from app.models.news import NewsItem
+from app.models.ingestion import SourceDocument
 from app.schemas.news import NewsItemCreate, NewsItemRead, NewsMeta, PaginatedNewsResponse
 
 
@@ -23,6 +24,11 @@ class NewsService:
                 select(Incident.id).where(Incident.case_number == data.promoted_case_number)
             )
             promoted_id = res.scalar_one_or_none()
+        source_document_id = (
+            await self.db.execute(
+                select(SourceDocument.id).where(SourceDocument.dedup_key == data.dedup_key)
+            )
+        ).scalar_one_or_none()
 
         values = {
             "dedup_key": data.dedup_key,
@@ -38,6 +44,7 @@ class NewsService:
             "country": data.country,
             "ai_confidence": data.ai_confidence,
             "promoted_incident_id": promoted_id,
+            "source_document_id": source_document_id,
         }
         stmt = pg_insert(NewsItem).values(**values)
         stmt = stmt.on_conflict_do_update(

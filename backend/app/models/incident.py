@@ -93,7 +93,8 @@ class Incident(Base):
 
     # Relationships
     sources = relationship(
-        "IncidentSource", back_populates="incident", cascade="all, delete-orphan"
+        "IncidentSource", back_populates="incident", cascade="all, delete-orphan",
+        lazy="selectin",
     )
     audit_logs = relationship(
         "IncidentAuditLog", back_populates="incident", cascade="all, delete-orphan"

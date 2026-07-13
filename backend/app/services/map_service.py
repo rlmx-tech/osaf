@@ -1,7 +1,7 @@
 from datetime import date
 
 from geoalchemy2.functions import ST_AsGeoJSON, ST_MakeEnvelope, ST_SnapToGrid, ST_Centroid, ST_Collect, ST_X, ST_Y
-from sqlalchemy import Float, cast, case, func, or_, select, text
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.incident import Incident

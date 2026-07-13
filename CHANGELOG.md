@@ -7,6 +7,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Fresh database migrations now install PostGIS before creating geometry
+  columns.** A clean `alembic upgrade head` previously failed because the
+  initial migration assumed the extension already existed.
+
 - **Stats counted sightings as attacks (SP5).** `StatsService` aggregated over
   every incident regardless of classification, so the ~108 sightings (plus
   near-miss/doubtful/etc.) inflated the headline attack numbers. All aggregates
@@ -48,6 +52,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   search are escaped so user input is matched literally. Commit `8877882`.
 
 ### Added
+
+- **Durable evidence ingestion and incident candidates.** Collector input now
+  passes through immutable `source_documents`, leased/retryable
+  `collection_jobs`, versioned `extracted_observations`, and reviewable
+  `incident_candidates`. Existing `news_items` are backfilled into the evidence
+  layer during migration. Exact event keys group independent observations, and
+  every promoted candidate links to its canonical incident. The admin panel
+  adds an Evidence Queue with publish/reject controls and private operational
+  health metrics. Collector item completion is no longer stored in a local JSON
+  file; PostgreSQL owns deduplication, leases, exponential retry state, and dead
+  letters. AI extraction no longer publishes canonical incidents directly;
+  publication and case-number assignment happen only after an administrator
+  approves the candidate. Migration: `f6a7b8c9d0e1`.
 
 - **LLM near-duplicate merge (SP4).** A backend batch job
   (`scripts/dedupe_llm.py`, dry-run default, `--apply`) catches same-event

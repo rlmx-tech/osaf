@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING
 from collector.extractor import apply_corrections, extract_incident, verify_incident
 from collector.models import ExtractedIncident, RawItem
 from collector.relevance import is_shark_relevant
-from collector.state import StateManager
-from collector.submitter import OsafSubmitter
 
 if TYPE_CHECKING:
     from collector.news_client import NewsClient
@@ -53,8 +51,6 @@ def _news_payload(
 
 async def process_items(
     items: list[RawItem],
-    state: StateManager,
-    submitter: OsafSubmitter,
     news_client: "NewsClient",
 ) -> dict:
     """Poll batch → capture all shark items → promote events to incidents."""
@@ -64,6 +60,7 @@ async def process_items(
         "extracted": 0,
         "verified": 0,
         "submitted": 0,
+        "candidates": 0,
         "promoted_attack": 0,
         "promoted_sighting": 0,
         "skipped_seen": 0,
@@ -78,14 +75,25 @@ async def process_items(
     for raw in items:
         stats["processed"] += 1
 
-        if state.is_seen(raw.dedup_key):
+        # Capture evidence and acquire a durable DB lease before doing any work.
+        try:
+            capture = await news_client.capture(raw)
+        except Exception:
+            logger.exception("pipeline: durable capture failed for %s", raw.source_url)
+            capture = None
+        if not capture:
+            stats["errors"] += 1
+            stats["retryable_failures"] += 1
+            continue
+        if not capture.get("should_process"):
             stats["skipped_seen"] += 1
             continue
+        job_id = capture["job_id"]
 
         # GATE 1 — shark-relevant at all?
         if not is_shark_relevant(raw.title, raw.content):
             stats["skipped_not_shark"] += 1
-            state.mark_skipped(raw.dedup_key, "not_shark")
+            await news_client.complete_without_incident(job_id, "not_relevant", "not_shark")
             continue
 
         # Capture into news_items first (resilient — survives extraction failure)
@@ -105,20 +113,22 @@ async def process_items(
             logger.exception("pipeline: extraction failed for %s", raw.source_url)
             stats["errors"] += 1
             stats["retryable_failures"] += 1
-            state.mark_retryable(raw.dedup_key, "extraction_error")
+            await news_client.fail_job(job_id, "extraction_error")
             continue
 
         if not incident or not incident.is_relevant:
             # Shark-related but not an event — lives in the feed only.
             stats["skipped_irrelevant"] += 1
-            state.mark_seen(raw.dedup_key)
+            await news_client.complete_without_incident(job_id, "news", "not_promotable")
             continue
 
         stats["extracted"] += 1
 
         if incident.confidence < MIN_EXTRACTION_CONFIDENCE:
             stats["skipped_low_confidence"] += 1
-            state.mark_skipped(raw.dedup_key, f"low_extraction_confidence ({incident.confidence:.0%})")
+            await news_client.record_observation(
+                job_id, incident, None, derive_event_type(incident)
+            )
             continue
 
         try:
@@ -130,19 +140,23 @@ async def process_items(
                 verification = None
             else:
                 stats["retryable_failures"] += 1
-                state.mark_retryable(raw.dedup_key, "verification_error")
+                await news_client.fail_job(job_id, "verification_error")
                 continue
 
         if verification:
             stats["verified"] += 1
             if verification.is_duplicate_likely:
                 stats["skipped_duplicate"] += 1
-                state.mark_skipped(raw.dedup_key, "likely_duplicate")
+                await news_client.record_observation(
+                    job_id, incident, verification, derive_event_type(incident)
+                )
                 continue
             if not verification.is_valid:
                 if verification.confidence >= 0.6:
                     stats["skipped_low_confidence"] += 1
-                    state.mark_skipped(raw.dedup_key, f"verification_rejected: {verification.notes}")
+                    await news_client.record_observation(
+                        job_id, incident, verification, derive_event_type(incident)
+                    )
                     continue
                 logger.warning(
                     "pipeline: verifier uncertain (%.0f%%), downgrading report: %s",
@@ -156,38 +170,29 @@ async def process_items(
 
         event_type = derive_event_type(incident)
 
+        # Classification is visible in the news feed, but canonical publication
+        # now requires an explicit admin review of the evidence candidate.
         try:
-            case_number = await submitter.submit(incident)
+            await news_client.upsert(_news_payload(
+                raw, event_type=event_type, country=incident.country,
+                ai_confidence=incident.confidence,
+            ))
         except Exception:
-            logger.exception("pipeline: submission failed for %s", raw.source_url)
-            stats["errors"] += 1
-            stats["retryable_failures"] += 1
-            state.mark_retryable(raw.dedup_key, "submission_exception")
-            continue
+            logger.exception("pipeline: news classification update failed for %s", raw.source_url)
 
-        if case_number:
-            stats["submitted"] += 1
-            if event_type == "sighting":
-                stats["promoted_sighting"] += 1
-            else:
-                stats["promoted_attack"] += 1
-            # Link the news item to the promoted incident.
-            try:
-                await news_client.upsert(_news_payload(
-                    raw, event_type=event_type, country=incident.country,
-                    ai_confidence=incident.confidence, promoted_case_number=case_number,
-                ))
-            except Exception:
-                logger.exception("pipeline: news promotion-link failed for %s", raw.source_url)
-            state.mark_seen(raw.dedup_key, case_number)
+        observation_id = await news_client.record_observation(
+            job_id, incident, verification, event_type
+        )
+        if observation_id:
+            stats["candidates"] += 1
             logger.info(
-                "pipeline: ✓ %s [%s] — %s, %s (%s)",
-                case_number, event_type, incident.location_description,
+                "pipeline: candidate [%s] — %s, %s (%s)",
+                event_type, incident.location_description,
                 incident.country, raw.source_platform.value,
             )
         else:
             stats["errors"] += 1
             stats["retryable_failures"] += 1
-            state.mark_retryable(raw.dedup_key, "submission_failed")
+            await news_client.fail_job(job_id, "observation_failed")
 
     return stats
