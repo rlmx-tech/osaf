@@ -1,3 +1,5 @@
+import re
+
 from geoalchemy2 import Geography
 from sqlalchemy import cast, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +13,69 @@ from app.schemas.incident import IncidentCreate, SourceCreate
 from app.utils.geo import point_from_coords
 
 _MATCH_RADIUS_M = 150
+_GENERIC_HEADLINE_PREFIXES = (
+    "a full list of",
+    "latest articles",
+    "recent articles",
+)
+
+
+def _headline_fingerprint(title: str | None) -> str | None:
+    """Normalize syndicated headlines while discarding outlet suffixes."""
+    if not title:
+        return None
+    headline = title.rsplit(" - ", 1)[0]
+    fingerprint = re.sub(r"\s+", " ", headline).strip().casefold()
+    if len(fingerprint) < 30 or fingerprint.startswith(_GENERIC_HEADLINE_PREFIXES):
+        return None
+    return fingerprint
+
+
+async def _find_source_duplicate(
+    db: AsyncSession, sources: list[SourceCreate]
+) -> Incident | None:
+    """Match exact URLs or syndicated versions of the exact same headline."""
+    urls = {source.source_url for source in sources if source.source_url}
+    if urls:
+        result = await db.execute(
+            select(Incident)
+            .join(IncidentSource)
+            .options(selectinload(Incident.sources))
+            .where(
+                IncidentSource.source_url.in_(urls),
+                Incident.verification_status != "rejected",
+            )
+            .order_by(Incident.case_number.asc())
+        )
+        match = result.scalars().first()
+        if match:
+            return match
+
+    fingerprints = {
+        fingerprint
+        for source in sources
+        if (fingerprint := _headline_fingerprint(source.source_title))
+    }
+    for fingerprint in fingerprints:
+        prefix = fingerprint[:80]
+        escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        result = await db.execute(
+            select(Incident)
+            .join(IncidentSource)
+            .options(selectinload(Incident.sources))
+            .where(
+                func.lower(IncidentSource.source_title).like(f"{escaped}%", escape="\\"),
+                Incident.verification_status != "rejected",
+            )
+            .order_by(Incident.case_number.asc())
+        )
+        for incident in result.scalars().unique():
+            if any(
+                _headline_fingerprint(source.source_title) == fingerprint
+                for source in incident.sources
+            ):
+                return incident
+    return None
 
 
 def _victim_conflict(inc: Incident, data: IncidentCreate) -> bool:
@@ -25,9 +90,15 @@ def _victim_conflict(inc: Incident, data: IncidentCreate) -> bool:
 async def find_duplicate_incident(db: AsyncSession, data: IncidentCreate) -> Incident | None:
     """Return an existing incident that is the same real-world event as `data`, else None.
 
-    Same event = exact-precision same date + coordinates within 150 m + same
-    classification, with a victim age/sex guard. Conservative by design.
+    Exact source URLs and syndicated copies of the same specific headline are
+    definitive matches. Otherwise, same event = exact-precision same date +
+    coordinates within 150 m + same classification, with a victim age/sex
+    guard. Conservative by design.
     """
+    source_match = await _find_source_duplicate(db, data.sources)
+    if source_match:
+        return source_match
+
     if data.date_precision != "exact" or data.incident_date is None or data.coordinates is None:
         return None
 

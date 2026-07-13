@@ -1,7 +1,7 @@
 import pytest
 from app.models.incident import Incident
 from app.schemas.incident import CoordinatesSchema, IncidentCreate
-from app.services.dedup_service import find_duplicate_incident
+from app.services.dedup_service import _headline_fingerprint, find_duplicate_incident
 from app.utils.geo import point_from_coords
 
 
@@ -28,6 +28,20 @@ def _create(**kw):
                 coordinates=CoordinatesSchema(longitude=-77.3434, latitude=25.0764))
     base.update(kw)
     return IncidentCreate(**base)
+
+
+def test_headline_fingerprint_removes_outlet_suffix():
+    yahoo = _headline_fingerprint(
+        "Swimmer suffers apparent shark bite at Jones Beach - Yahoo"
+    )
+    local = _headline_fingerprint(
+        "Swimmer suffers apparent shark bite at Jones Beach - Local News"
+    )
+    assert yahoo == local
+
+
+def test_headline_fingerprint_rejects_generic_titles():
+    assert _headline_fingerprint("A full list of our latest articles can be found here") is None
 
 
 @pytest.mark.asyncio
@@ -128,3 +142,33 @@ async def test_submission_distinct_event_creates_new(db, verified_user):
     a = await svc.submit_incident(mk("2026-06-25", "https://y/1"), verified_user)
     b = await svc.submit_incident(mk("2026-07-04", "https://y/2"), verified_user)  # different date
     assert a.case_number != b.case_number
+
+
+@pytest.mark.asyncio
+async def test_syndicated_headline_matches_without_coordinates(db):
+    from app.models.source import IncidentSource
+    from app.schemas.incident import SourceCreate
+
+    incident = await _add_incident(db, case_number="OSAF-2026-0011")
+    incident.sources.append(IncidentSource(
+        source_type="news_article",
+        source_url="https://news.example/a",
+        source_title="Shark sighting forces beachgoers from swim area - AOL.com",
+    ))
+    await db.commit()
+
+    data = IncidentCreate(
+        incident_date="2026-07-13",
+        location_description="Dartmouth beach",
+        country="United States",
+        classification="sighting",
+        sources=[SourceCreate(
+            source_type="news_article",
+            source_url="https://news.example/b",
+            source_title="Shark sighting forces beachgoers from swim area - Local News",
+        )],
+    )
+
+    match = await find_duplicate_incident(db, data)
+    assert match is not None
+    assert match.id == incident.id
