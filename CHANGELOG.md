@@ -7,6 +7,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Long aggregator URLs no longer fail evidence capture.** Deduplication keys
+  longer than the database/API limit now use a stable SHA-256 URL fingerprint.
+
 - **Fresh database migrations now install PostGIS before creating geometry
   columns.** A clean `alembic upgrade head` previously failed because the
   initial migration assumed the extension already existed.

@@ -3,6 +3,20 @@ from collector.models import ExtractedIncident, RawItem, SourcePlatform, Verific
 from collector.news_client import NewsClient
 
 
+def test_long_source_url_uses_bounded_stable_dedup_key():
+    raw = RawItem(
+        source_platform=SourcePlatform.NEWS_RSS,
+        source_name="Feed",
+        source_url=f"https://example.test/{'x' * 700}",
+        title="Shark report",
+        content="body",
+    )
+
+    assert len(raw.dedup_key) < 512
+    assert raw.dedup_key == raw.model_copy().dedup_key
+    assert raw.dedup_key.startswith("news_rss:sha256:")
+
+
 @pytest.mark.asyncio
 async def test_upsert_posts_and_returns_id(monkeypatch):
     client = NewsClient()

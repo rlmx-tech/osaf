@@ -2,6 +2,7 @@
 
 from datetime import date, datetime
 from enum import Enum
+import hashlib
 
 from pydantic import BaseModel, Field
 
@@ -29,7 +30,11 @@ class RawItem(BaseModel):
     @property
     def dedup_key(self) -> str:
         """Unique key for deduplication based on source URL."""
-        return f"{self.source_platform.value}:{self.source_url}"
+        key = f"{self.source_platform.value}:{self.source_url}"
+        if len(key) <= 512:
+            return key
+        digest = hashlib.sha256(self.source_url.encode()).hexdigest()
+        return f"{self.source_platform.value}:sha256:{digest}"
 
 
 class ExtractedIncident(BaseModel):

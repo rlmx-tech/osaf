@@ -54,8 +54,14 @@ class NewsClient:
                 )
             response.raise_for_status()
             return response
+        except httpx.HTTPStatusError as exc:
+            logger.error(
+                "news_client: request failed for %s (%d): %s",
+                path, exc.response.status_code, exc.response.text[:1000],
+            )
+            return None
         except httpx.HTTPError:
-            logger.exception("news_client: request failed for %s", path)
+            logger.exception("news_client: transport failed for %s", path)
             return None
 
     async def capture(self, raw: RawItem) -> dict | None:
