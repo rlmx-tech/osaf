@@ -3,15 +3,16 @@
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from app.utils.case_number import generate_case_number
 
 
-def _mock_db(count: int) -> AsyncMock:
+def _mock_db(highest_suffix: int | None) -> AsyncMock:
     mock_result = MagicMock()
-    mock_result.scalar_one.return_value = count
+    mock_result.scalar_one_or_none.return_value = highest_suffix
     db = AsyncMock()
+    bind = MagicMock()
+    bind.dialect.name = "sqlite"
+    db.get_bind = MagicMock(return_value=bind)
     db.execute = AsyncMock(return_value=mock_result)
     return db
 
@@ -28,6 +29,12 @@ class TestGenerateCaseNumber:
         result = await generate_case_number(db)
         year = date.today().year
         assert result == f"OSAF-{year}-0002"
+
+    async def test_uses_highest_suffix_instead_of_row_count(self):
+        db = _mock_db(6573)
+        result = await generate_case_number(db)
+        year = date.today().year
+        assert result == f"OSAF-{year}-6574"
 
     async def test_tenth_case_zero_padded(self):
         db = _mock_db(9)

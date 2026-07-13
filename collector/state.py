@@ -8,7 +8,7 @@ Uses a JSON file to persist state across restarts. Stores:
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from collector.config import settings
@@ -16,6 +16,8 @@ from collector.config import settings
 logger = logging.getLogger(__name__)
 
 _MAX_SEEN_ENTRIES = 10_000  # Trim oldest entries when exceeded
+_INITIAL_RETRY_DELAY = timedelta(minutes=5)
+_MAX_RETRY_DELAY = timedelta(hours=6)
 
 
 class StateManager:
@@ -49,8 +51,21 @@ class StateManager:
             logger.exception("state: failed to save state file")
 
     def is_seen(self, dedup_key: str) -> bool:
-        """Check if a source URL/key has already been processed."""
-        return dedup_key in self._state.get("seen_keys", {})
+        """Check whether a key is complete or still waiting for retry."""
+        entry = self._state.get("seen_keys", {}).get(dedup_key)
+        if entry is None:
+            return False
+        if not entry.get("retryable"):
+            return True
+
+        retry_after = entry.get("retry_after")
+        if not retry_after:
+            return False
+        try:
+            return datetime.now(timezone.utc) < datetime.fromisoformat(retry_after)
+        except ValueError:
+            logger.warning("state: invalid retry timestamp for %s; retrying", dedup_key)
+            return False
 
     def mark_seen(self, dedup_key: str, case_number: str | None = None) -> None:
         """Mark a source URL/key as processed."""
@@ -72,6 +87,39 @@ class StateManager:
         }
         self._trim_if_needed()
         self._save()
+
+    def mark_retryable(self, dedup_key: str, reason: str) -> None:
+        """Keep a transient failure with exponential backoff instead of losing it."""
+        seen = self._state.setdefault("seen_keys", {})
+        previous = seen.get(dedup_key, {})
+        attempts = int(previous.get("attempts", 0)) + 1
+        delay_seconds = min(
+            _INITIAL_RETRY_DELAY.total_seconds() * (2 ** (attempts - 1)),
+            _MAX_RETRY_DELAY.total_seconds(),
+        )
+        now = datetime.now(timezone.utc)
+        seen[dedup_key] = {
+            "processed_at": now.isoformat(),
+            "retryable": True,
+            "reason": reason,
+            "attempts": attempts,
+            "retry_after": (now + timedelta(seconds=delay_seconds)).isoformat(),
+        }
+        self._trim_if_needed()
+        self._save()
+
+    def release_failures(self, reasons: set[str]) -> int:
+        """Release legacy permanent failures so source pollers can retry them."""
+        seen = self._state.setdefault("seen_keys", {})
+        keys = [
+            key for key, value in seen.items()
+            if value.get("skipped") and value.get("reason") in reasons
+        ]
+        for key in keys:
+            del seen[key]
+        if keys:
+            self._save()
+        return len(keys)
 
     def get_last_poll(self, poller_name: str) -> str | None:
         """Get the last poll timestamp for a poller."""
@@ -105,8 +153,10 @@ class StateManager:
         seen = self._state.get("seen_keys", {})
         submitted = sum(1 for v in seen.values() if v.get("case_number"))
         skipped = sum(1 for v in seen.values() if v.get("skipped"))
+        retryable = sum(1 for v in seen.values() if v.get("retryable"))
         return {
             "total_seen": len(seen),
             "submitted": submitted,
             "skipped": skipped,
+            "retryable": retryable,
         }

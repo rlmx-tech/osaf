@@ -54,7 +54,8 @@ class Scheduler:
             if items:
                 stats = await process_items(items, self._state, self._submitter, self._news)
                 logger.info(
-                    "scheduler: %s batch — %d processed, %d captured, %d submitted, %d skipped, %d errors",
+                    "scheduler: %s batch — %d processed, %d captured, %d submitted, "
+                    "%d skipped, %d retryable, %d errors",
                     poller.name,
                     stats["processed"],
                     stats["captured_news"],
@@ -62,6 +63,7 @@ class Scheduler:
                     stats["skipped_seen"] + stats["skipped_not_shark"]
                     + stats["skipped_irrelevant"] + stats["skipped_low_confidence"]
                     + stats["skipped_duplicate"],
+                    stats["retryable_failures"],
                     stats["errors"],
                 )
 

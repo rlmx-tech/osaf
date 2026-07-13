@@ -71,6 +71,7 @@ async def process_items(
         "skipped_irrelevant": 0,
         "skipped_low_confidence": 0,
         "skipped_duplicate": 0,
+        "retryable_failures": 0,
         "errors": 0,
     }
 
@@ -89,8 +90,11 @@ async def process_items(
 
         # Capture into news_items first (resilient — survives extraction failure)
         try:
-            await news_client.upsert(_news_payload(raw, event_type="news"))
-            stats["captured_news"] += 1
+            news_id = await news_client.upsert(_news_payload(raw, event_type="news"))
+            if news_id:
+                stats["captured_news"] += 1
+            else:
+                logger.warning("pipeline: news capture returned no id for %s", raw.source_url)
         except Exception:
             logger.exception("pipeline: news capture failed for %s", raw.source_url)
 
@@ -100,7 +104,8 @@ async def process_items(
         except Exception:
             logger.exception("pipeline: extraction failed for %s", raw.source_url)
             stats["errors"] += 1
-            state.mark_skipped(raw.dedup_key, "extraction_error")
+            stats["retryable_failures"] += 1
+            state.mark_retryable(raw.dedup_key, "extraction_error")
             continue
 
         if not incident or not incident.is_relevant:
@@ -124,7 +129,8 @@ async def process_items(
             if incident.confidence >= 0.7:
                 verification = None
             else:
-                state.mark_skipped(raw.dedup_key, "verification_error")
+                stats["retryable_failures"] += 1
+                state.mark_retryable(raw.dedup_key, "verification_error")
                 continue
 
         if verification:
@@ -151,6 +157,8 @@ async def process_items(
         except Exception:
             logger.exception("pipeline: submission failed for %s", raw.source_url)
             stats["errors"] += 1
+            stats["retryable_failures"] += 1
+            state.mark_retryable(raw.dedup_key, "submission_exception")
             continue
 
         if case_number:
@@ -175,6 +183,7 @@ async def process_items(
             )
         else:
             stats["errors"] += 1
-            state.mark_skipped(raw.dedup_key, "submission_failed")
+            stats["retryable_failures"] += 1
+            state.mark_retryable(raw.dedup_key, "submission_failed")
 
     return stats
