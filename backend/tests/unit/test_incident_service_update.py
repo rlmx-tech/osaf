@@ -4,8 +4,6 @@ import uuid
 from datetime import date, datetime, time
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from app.schemas.incident import IncidentUpdate
 from app.services.incident_service import IncidentService
 
@@ -103,3 +101,20 @@ class TestUpdateIncidentSuccess:
         service = IncidentService(db)
         await service.update_incident(incident.id, IncidentUpdate())
         assert db.commit.called
+
+    async def test_explicit_null_clears_coordinates(self):
+        incident = _make_valid_incident(coordinates=object())
+        db = AsyncMock()
+        db.execute = AsyncMock(side_effect=[
+            _scalar_result(incident),
+            _scalar_result(incident),
+        ])
+
+        service = IncidentService(db)
+        await service.update_incident(
+            incident.id,
+            IncidentUpdate(coordinates=None, location_precision="unknown"),
+        )
+
+        assert incident.coordinates is None
+        assert incident.location_precision == "unknown"

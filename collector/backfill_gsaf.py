@@ -19,6 +19,7 @@ from pathlib import Path
 import httpx
 
 from collector.config import COMMON_TO_SCIENTIFIC, settings
+from collector.geocoder import geocode_incident
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,11 +28,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 GSAF_URL = "https://www.sharkattackfile.net/spreadsheets/GSAF5.xls"
-NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-
 # Geocode cache to avoid duplicate lookups
 _geocode_cache: dict[str, tuple[float, float] | None] = {}
-_last_nominatim_call = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -372,76 +370,18 @@ def _parse_time(val: str) -> str | None:
 
 
 async def geocode(location: str, country: str, state: str | None) -> tuple[float, float] | None:
-    """Geocode a location using Nominatim. Returns (lat, lon) or None."""
-    global _last_nominatim_call
-
-    # Build query
-    parts = []
-    if location:
-        parts.append(location)
-    if state:
-        parts.append(state)
-    if country:
-        parts.append(country)
-    query = ", ".join(parts)
+    """Geocode through the shared state-bounded, marine-validated path."""
+    query = "|".join((location or "", state or "", country or ""))
 
     if query in _geocode_cache:
         return _geocode_cache[query]
-
-    # Rate limit: 1 request per second
-    now = time.monotonic()
-    wait = 1.0 - (now - _last_nominatim_call)
-    if wait > 0:
-        await asyncio.sleep(wait)
-
-    async with httpx.AsyncClient(timeout=10) as client:
-        try:
-            _last_nominatim_call = time.monotonic()
-            resp = await client.get(
-                NOMINATIM_URL,
-                params={
-                    "q": query,
-                    "format": "json",
-                    "limit": 1,
-                },
-                headers={"User-Agent": "OSAF-Backfill/0.1 (shark incident database)"},
-            )
-            resp.raise_for_status()
-            results = resp.json()
-            if results:
-                lat = float(results[0]["lat"])
-                lon = float(results[0]["lon"])
-                _geocode_cache[query] = (lat, lon)
-                return (lat, lon)
-        except Exception:
-            logger.debug("geocode failed for %r", query)
-
-    # Try with just state + country
-    if location and state:
-        fallback = f"{state}, {country}"
-        if fallback not in _geocode_cache:
-            await asyncio.sleep(1.0)
-            async with httpx.AsyncClient(timeout=10) as client:
-                try:
-                    _last_nominatim_call = time.monotonic()
-                    resp = await client.get(
-                        NOMINATIM_URL,
-                        params={"q": fallback, "format": "json", "limit": 1},
-                        headers={"User-Agent": "OSAF-Backfill/0.1 (shark incident database)"},
-                    )
-                    resp.raise_for_status()
-                    results = resp.json()
-                    if results:
-                        lat = float(results[0]["lat"])
-                        lon = float(results[0]["lon"])
-                        _geocode_cache[fallback] = (lat, lon)
-                        _geocode_cache[query] = (lat, lon)
-                        return (lat, lon)
-                except Exception:
-                    pass
-
-    _geocode_cache[query] = None
-    return None
+    result = await geocode_incident(
+        location_description=location,
+        country=country,
+        state_province=state,
+    )
+    _geocode_cache[query] = result
+    return result
 
 
 def parse_gsaf_row(row_values: list, col_count: int) -> dict | None:

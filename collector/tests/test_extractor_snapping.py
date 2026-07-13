@@ -1,4 +1,4 @@
-"""Integration test: extract_incident snaps vague-location coordinates to coast."""
+"""Integration tests for coordinate quality in extracted incidents."""
 
 import asyncio
 import json
@@ -16,7 +16,7 @@ def _raw() -> RawItem:
     )
 
 
-def test_vague_location_is_snapped_to_coast(monkeypatch):
+def test_vague_location_is_left_unmapped_instead_of_guessing(monkeypatch):
     import collector.extractor as ex
 
     # Ollama returns a vague, country-only location.
@@ -41,10 +41,8 @@ def test_vague_location_is_snapped_to_coast(monkeypatch):
     incident = asyncio.run(ex.extract_incident(_raw()))
 
     assert incident is not None
-    # The inland centroid must have been snapped to the South African coast.
-    assert incident.latitude != -30.559
-    assert -35.5 <= incident.latitude <= -25.0
-    assert 15.0 <= incident.longitude <= 34.0
+    assert incident.latitude is None
+    assert incident.longitude is None
 
 
 def test_specific_location_is_not_snapped(monkeypatch):
@@ -73,3 +71,4 @@ def test_specific_location_is_not_snapped(monkeypatch):
     assert incident is not None
     assert incident.latitude == -34.049
     assert incident.longitude == 24.909
+    assert incident.location_precision == "approximate"

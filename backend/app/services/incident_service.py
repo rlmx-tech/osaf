@@ -348,9 +348,13 @@ class IncidentService:
         update_data = data.model_dump(exclude_unset=True)
 
         # Handle coordinates separately
-        coords = update_data.pop("coordinates", None)
-        if coords is not None:
-            incident.coordinates = point_from_coords(coords["longitude"], coords["latitude"])
+        if "coordinates" in update_data:
+            coords = update_data.pop("coordinates")
+            incident.coordinates = (
+                point_from_coords(coords["longitude"], coords["latitude"])
+                if coords is not None
+                else None
+            )
 
         for field, value in update_data.items():
             setattr(incident, field, value)

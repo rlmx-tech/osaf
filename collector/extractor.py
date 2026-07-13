@@ -15,7 +15,7 @@ from datetime import date
 
 import httpx
 
-from collector.coastline import is_vague_location, snap_if_inland
+from collector.coastline import is_vague_location
 from collector.config import (
     COMMON_TO_SCIENTIFIC,
     COUNTRY_ALIASES,
@@ -320,22 +320,17 @@ async def extract_incident(raw: RawItem) -> ExtractedIncident | None:
     state_province = data.get("state_province")
     body_of_water = data.get("body_of_water")
 
-    coords = await geocode_incident(
-        location_description=location_desc,
-        country=country,
-        state_province=state_province,
-        body_of_water=body_of_water,
-    )
-    # Vague locations (just a country/region) geocode to inland centroids;
-    # snap those to the nearest coast. Specific locations are never snapped.
-    if coords and is_vague_location(location_desc, country, state_province):
-        snapped = snap_if_inland(coords[0], coords[1])
-        if snapped:
-            logger.info(
-                "extractor: snapped vague location %r %.0fkm inland -> coast",
-                location_desc, snapped[2],
-            )
-            coords = (snapped[0], snapped[1])
+    # A missing marker is more honest than an arbitrary point on a large state
+    # or country's coastline. Specific locations are geocoded and marine-
+    # validated; vague regional descriptions remain intentionally unmapped.
+    coords = None
+    if not is_vague_location(location_desc, country, state_province):
+        coords = await geocode_incident(
+            location_description=location_desc,
+            country=country,
+            state_province=state_province,
+            body_of_water=body_of_water,
+        )
     latitude = coords[0] if coords else None
     longitude = coords[1] if coords else None
 

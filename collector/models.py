@@ -46,6 +46,7 @@ class ExtractedIncident(BaseModel):
     country: str
     state_province: str | None = None
     body_of_water: str | None = None
+    location_precision: str = "approximate"
     classification: str = "not_confirmed"
     classification_subtype: str | None = None
     report_source: str | None = None

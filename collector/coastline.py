@@ -1,14 +1,9 @@
-"""Coastline snapping for vague-location shark incidents.
+"""Coastal validation utilities for marine incident locations.
 
-Incidents whose location is only known to a country/region geocode to the
-country centroid, which lands inland. Since shark incidents occur in/near
-water, we relocate such points to the nearest coastline — but only when the
-point is genuinely on land (offshore points are left alone) and clearly inland
-(already-coastal points are left alone).
-
-Detection of "vague" is the caller's first gate (is_vague_location); the
-on-land + distance checks live in snap_if_inland. Specific-location incidents
-are never passed in, so genuine inland river/lake incidents are never moved.
+Broad regional descriptions are marked as vague so callers can leave them
+unmapped instead of inventing a precise point. For specific place names,
+land-distance checks can reject a bad same-name geocode or move a nearby
+on-land result to the coast. Offshore and already-coastal points are unchanged.
 
 The land geometry is Natural Earth 1:50m land polygons (public domain),
 vendored at collector/data/ne_50m_land.geojson. The polygon boundary is the
@@ -18,6 +13,7 @@ coastline, so one dataset gives us both the on-land test and the snap target.
 import json
 import logging
 from pathlib import Path
+import re
 
 from shapely.geometry import Point, shape
 from shapely.ops import nearest_points
@@ -32,24 +28,55 @@ _DATA_PATH = Path(__file__).parent / "data" / "ne_50m_land.geojson"
 # Default distance (km) a point must be from the coast before we snap it.
 DEFAULT_THRESHOLD_KM = 25.0
 
+_PLACE_ALIASES = {
+    "calif": "california",
+    "norcal": "northern california",
+    "socal": "southern california",
+    "qld": "queensland",
+    "nsw": "new south wales",
+    "south australian": "south australia",
+    "western australian": "western australia",
+}
+_VAGUE_MODIFIERS = {
+    "a", "at", "east", "eastern", "far", "in", "near", "north", "northern",
+    "of", "off", "on", "south", "southern", "the", "west", "western",
+}
+_GENERIC_COASTAL_PLACES = {
+    "beach", "coast", "coastline", "island", "ocean", "pier", "shore", "waters",
+}
+
+
+def _normalize_place(value: str | None) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+    for alias, canonical in _PLACE_ALIASES.items():
+        normalized = re.sub(rf"\b{re.escape(alias)}\b", canonical, normalized)
+    return " ".join(normalized.split())
+
 
 def is_vague_location(
     location_description: str | None,
     country: str | None,
     state_province: str | None,
 ) -> bool:
-    """True when the location is too vague to trust as a real place.
+    """Return whether the description is too broad for a trustworthy marker.
 
-    Vague means: no location text, or the location is just the country or the
-    state/province name. These are the only incidents eligible for snapping.
+    This includes missing text, bare country/state names, and generic regional
+    phrases such as ``California beach`` or ``island, Queensland``.
     """
-    loc = (location_description or "").strip().lower()
+    loc = _normalize_place(location_description)
     if not loc:
         return True
-    return loc in {
-        (country or "").strip().lower(),
-        (state_province or "").strip().lower(),
+    regions = {
+        _normalize_place(country),
+        _normalize_place(state_province),
     } - {""}
+    if loc in regions:
+        return True
+
+    tokens = set(loc.split()) - _VAGUE_MODIFIERS - _GENERIC_COASTAL_PLACES
+    if not tokens:
+        return True
+    return any(tokens == set(region.split()) for region in regions)
 
 
 class LandIndex:
@@ -127,16 +154,43 @@ def snap_if_inland(
     idx = index if index is not None else _get_default_index()
 
     try:
-        if not idx.contains(lat, lon):
+        measured = _measure_inland(lat, lon, idx)
+        if measured is None:
             return None
-        coast = idx.nearest_coast(lat, lon)
-        if coast is None:
-            return None
-        new_lat, new_lon = coast
-        moved_km = haversine_km(lat, lon, new_lat, new_lon)
+        new_lat, new_lon, moved_km = measured
         if moved_km < threshold_km:
             return None
         return (new_lat, new_lon, moved_km)
     except Exception:
         logger.exception("coastline: snap failed for (%.4f, %.4f)", lat, lon)
         return None
+
+
+def _measure_inland(
+    lat: float,
+    lon: float,
+    index: LandIndex,
+) -> tuple[float, float, float] | None:
+    if not index.contains(lat, lon):
+        return None
+    coast = index.nearest_coast(lat, lon)
+    if coast is None:
+        return None
+    new_lat, new_lon = coast
+    return (new_lat, new_lon, haversine_km(lat, lon, new_lat, new_lon))
+
+
+def inland_distance_km(
+    lat: float,
+    lon: float,
+    *,
+    index: LandIndex | None = None,
+) -> float:
+    """Distance to land boundary, or zero when already offshore/on the boundary."""
+    idx = index if index is not None else _get_default_index()
+    try:
+        measured = _measure_inland(lat, lon, idx)
+        return measured[2] if measured else 0.0
+    except Exception:
+        logger.exception("coastline: distance check failed for (%.4f, %.4f)", lat, lon)
+        return 0.0

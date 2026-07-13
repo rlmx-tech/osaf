@@ -1,17 +1,15 @@
-"""Geocoding via OpenStreetMap Nominatim with coastline bias for shark incidents.
+"""Nominatim geocoding with coastal validation for marine incidents.
 
-Strategy:
-- For NEW incidents: Nominatim geocodes the location; falls back to LLM estimate.
-- For BACKFILL: Only corrects coordinates that are clearly inland/wrong.
-
-All shark incidents occur in or near water. Nominatim produces much better
-coordinates than LLM guessing, especially for vague locations like "California
-beach" which LLMs place at geographic centers (e.g., Fresno).
+Generic regional descriptions are left unmapped. Specific place candidates are
+checked against the requested state/province and ranked by distance to the
+coast, preventing inland same-name matches from becoming map markers. Explicit
+inland-water and aquarium contexts remain eligible for inland coordinates.
 """
 
 import asyncio
 import logging
 import math
+import re
 from dataclasses import dataclass
 
 import httpx
@@ -57,14 +55,45 @@ _STATE_BOUNDS: dict[str, tuple[float, float, float, float]] = {
     "kwazulu-natal": (-31.0, -27.0, 29.0, 33.0),
     "eastern cape": (-34.0, -30.5, 24.5, 30.2),
     "western cape": (-35.0, -31.0, 17.5, 21.0),
+    "tasmania": (-43.8, -39.5, 143.5, 148.6),
+    "georgia": (30.3, 35.1, -85.7, -80.8),
+    "maine": (42.9, 47.5, -71.2, -66.8),
+    "maryland": (37.8, 39.8, -79.6, -75.0),
+    "rhode island": (41.1, 42.1, -71.9, -71.1),
+    "virginia": (36.5, 39.5, -83.7, -75.2),
 }
+
+_STATE_ALIASES = {
+    "nsw": "new south wales",
+    "qld": "queensland",
+    "sa": "south australia",
+    "tas": "tasmania",
+    "vic": "victoria",
+    "wa": "western australia",
+}
+
+MAX_MARINE_INLAND_KM = 25.0
+SNAP_MARINE_INLAND_KM = 1.0
+_INLAND_CONTEXT_TERMS = {
+    "aquarium", "aquaria", "canal", "creek", "lake", "reservoir", "river",
+}
+_LOCATION_ALIASES = {
+    ("newport", "california"): "Newport Beach",
+}
+
+
+def _canonical_state(state: str | None) -> str | None:
+    if not state:
+        return None
+    normalized = state.strip().lower()
+    return _STATE_ALIASES.get(normalized, normalized)
 
 
 def _in_state_bounds(lat: float, lng: float, state: str | None) -> bool:
     """Check if coordinates fall within expected state bounds."""
     if not state:
         return True  # Can't validate without state info
-    bounds = _STATE_BOUNDS.get(state.lower().strip())
+    bounds = _STATE_BOUNDS.get(_canonical_state(state) or "")
     if not bounds:
         return True  # Unknown state — can't validate
     lat_min, lat_max, lon_min, lon_max = bounds
@@ -78,27 +107,47 @@ def _build_search_queries(
     body_of_water: str | None = None,
 ) -> list[str]:
     """Build a ranked list of search queries from most to least specific."""
-    queries = []
+    from collector.coastline import is_vague_location
+
+    queries: list[str] = []
     loc = location_description.strip()
+    canonical_state = _canonical_state(state_province)
+    state_label = canonical_state.title() if canonical_state else None
 
-    # Most specific: full location with state and country
-    if state_province and country:
-        queries.append(f"{loc}, {state_province}, {country}")
+    loc = re.sub(r"\bPoint Plomber\b", "Point Plomer", loc, flags=re.I)
+    loc = _LOCATION_ALIASES.get(
+        (loc.lower(), canonical_state or ""),
+        loc,
+    )
 
-    # With country only
-    if country and f"{loc}, {country}" not in queries:
-        queries.append(f"{loc}, {country}")
+    if is_vague_location(loc, country, state_province):
+        anchor = state_label or country
+        if anchor:
+            return [", ".join(dict.fromkeys(part for part in (anchor, country) if part))]
 
-    # For vague locations, try with "coast" appended
-    vague_keywords = {"beach", "coast", "coastline", "shore"}
-    loc_lower = loc.lower()
-    is_vague = any(
-        loc_lower.endswith(kw) or loc_lower == kw
-        for kw in vague_keywords
-    ) or loc_lower in {s.lower() for s in (state_province or "", country or "") if s}
+    variants = [loc]
+    without_prefix = re.sub(r"^(?:near|off|at|outside)\s+", "", loc, flags=re.I)
+    if without_prefix != loc:
+        variants.append(without_prefix)
+    if "," in loc:
+        variants.append(loc.split(",", 1)[0].strip())
+    directional = re.split(r"\s+(?:north|south|east|west)\s+of\s+", loc, flags=re.I)
+    if len(directional) == 2:
+        variants.extend(part.strip() for part in directional)
 
-    if is_vague and state_province:
-        queries.append(f"{state_province} coast, {country or ''}")
+    def contextualize(place: str) -> str:
+        parts = [place]
+        lowered = place.lower()
+        if state_label and canonical_state not in lowered:
+            parts.append(state_label)
+        if country and country.lower() not in lowered:
+            parts.append(country)
+        return ", ".join(parts)
+
+    for variant in variants:
+        query = contextualize(variant)
+        if query not in queries:
+            queries.append(query)
 
     return queries
 
@@ -186,7 +235,7 @@ def _get_viewbox(state: str | None) -> tuple[float, float, float, float] | None:
     """Get a viewbox for Nominatim search based on state/province."""
     if not state:
         return None
-    bounds = _STATE_BOUNDS.get(state.lower().strip())
+    bounds = _STATE_BOUNDS.get(_canonical_state(state) or "")
     if not bounds:
         return None
     # bounds = (lat_min, lat_max, lon_min, lon_max)
@@ -205,29 +254,61 @@ async def geocode_incident(
     Validates results against state bounds to avoid same-named places
     in the wrong region (e.g., Shell Key FL vs Shell Key in the Keys).
     """
+    from collector.coastline import (
+        inland_distance_km,
+        is_vague_location,
+        snap_if_inland,
+    )
+
+    if is_vague_location(location_description, country, state_province):
+        logger.info("geocoder: leaving vague location %r unmapped", location_description)
+        return None
+
     queries = _build_search_queries(
         location_description, country, state_province, body_of_water
     )
     country_code = _country_code(country)
     viewbox = _get_viewbox(state_province)
 
+    context = f"{location_description} {body_of_water or ''}".lower()
+    allow_inland = any(term in context for term in _INLAND_CONTEXT_TERMS)
     for query in queries:
         results = await _search_nominatim(query, country_code, viewbox)
 
-        # Filter to results within expected state bounds
-        for result in results:
-            if _in_state_bounds(result.latitude, result.longitude, state_province):
-                logger.debug(
-                    "geocoder: %r -> (%.4f, %.4f) via %r [%s]",
-                    location_description, result.latitude, result.longitude,
-                    query, result.display_name[:60],
-                )
-                return (result.latitude, result.longitude)
+        valid = [
+            result for result in results
+            if _in_state_bounds(result.latitude, result.longitude, state_province)
+        ]
+        if not valid:
+            continue
 
-        # If no results match state bounds, try next query
+        if allow_inland:
+            selected = valid[0]
+            return (selected.latitude, selected.longitude)
+
+        coastal = sorted(
+            (
+                (inland_distance_km(result.latitude, result.longitude), result)
+                for result in valid
+            ),
+            key=lambda pair: (pair[0], -pair[1].importance),
+        )
+        coastal = [pair for pair in coastal if pair[0] <= MAX_MARINE_INLAND_KM]
+        if coastal:
+            distance, selected = coastal[0]
+            if distance >= SNAP_MARINE_INLAND_KM:
+                snapped = snap_if_inland(
+                    selected.latitude,
+                    selected.longitude,
+                    threshold_km=SNAP_MARINE_INLAND_KM,
+                )
+                if snapped:
+                    return (snapped[0], snapped[1])
+            return (selected.latitude, selected.longitude)
+
         if results:
             logger.debug(
-                "geocoder: %r — %d results but none in %s bounds, trying next query",
+                "geocoder: %r — %d implausible/inland results for %s, trying next query",
                 location_description, len(results), state_province,
             )
 

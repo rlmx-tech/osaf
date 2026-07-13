@@ -7,6 +7,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Marine incidents no longer accept arbitrary inland geocodes.** Nominatim
+  candidates are state-bounded, ranked by coastal plausibility, and nearby
+  coastal place centroids are snapped to the waterline. Australian state
+  abbreviations, qualified landmarks ("near", "north of", "west of"), and
+  known ambiguous place names are normalized before lookup. Explicit river,
+  lake, canal, and aquarium incidents remain eligible for inland coordinates.
+  Vague state/country descriptions are now left unmapped rather than assigned
+  a misleading coastline guess. Collector coordinates publish as approximate.
+  A reviewed 21-record 2026 repair manifest corrects named locations and clears
+  four unsupported guesses.
+
 - **Collector source filtering now preserves contextual shark reports.** Curated
   shark channels such as SharksHappen may omit the word "shark" from titles
   like "Matawan River Attacks Revisited." Trusted-source incident language now

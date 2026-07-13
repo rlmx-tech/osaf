@@ -31,6 +31,14 @@ def square_land() -> LandIndex:
         (" south africa ", "South Africa", None, True), # case / whitespace
         ("New Smyrna Beach", "United States", "Florida", False),  # specific
         ("Coral Sea", "Australia", None, False),        # named water, not vague
+        ("California beach", "United States", "California", True),
+        ("Northern California", "United States", "California", True),
+        ("off Calif. Coast", "United States", "California", True),
+        ("NorCal", "United States", "California", True),
+        ("Qld island", "Australia", "Queensland", True),
+        ("near a pier", "United States", "California", True),
+        ("Long Beach", "United States", "California", False),
+        ("Newport Beach", "United States", "California", False),
     ],
 )
 def test_is_vague_location(loc, country, state, expected):
