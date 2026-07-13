@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { MapContainer, TileLayer, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, ZoomControl, useMapEvents } from "react-leaflet";
 import { useMapData } from "../../api/useMap";
 import IncidentMarker from "./IncidentMarker";
 import MapLegend from "./MapLegend";
@@ -49,11 +49,13 @@ export default function IncidentMap() {
         zoom={savedZoom ?? DEFAULT_ZOOM}
         minZoom={2}
         maxZoom={18}
+        zoomControl={false}
         className="w-full h-full"
         style={{ background: "#1a1a2e" }}
         worldCopyJump={true}
       >
         <MapViewTracker />
+        <ZoomControl position="topright" />
         <TileLayer
           attribution='&copy; <a href="https://carto.com/">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"

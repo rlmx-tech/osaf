@@ -14,6 +14,7 @@ export default function DatabasePage() {
     path: "/database",
   });
   const navigate = useNavigate();
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [filters, setFilters] = useState({
     sort: "incident_date",
     order: "desc",
@@ -47,18 +48,49 @@ export default function DatabasePage() {
   );
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-gray-900">
+    <div className="flex-1 flex min-w-0 overflow-hidden bg-gray-900">
       {/* Sidebar */}
-      <aside className="w-64 flex-shrink-0 border-r border-gray-700 p-4 overflow-y-auto">
+      <aside className="hidden w-64 flex-shrink-0 overflow-y-auto border-r border-gray-700 p-4 md:block">
         <h2 className="text-sm font-semibold text-white mb-4">Filters</h2>
         <IncidentFilters filters={filters} onFilterChange={handleFilterChange} />
       </aside>
 
+      {mobileFiltersOpen && (
+        <div className="fixed inset-0 z-[2100] flex md:hidden" role="dialog" aria-modal="true" aria-label="Incident filters">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/70"
+            onClick={() => setMobileFiltersOpen(false)}
+            aria-label="Close filters"
+          />
+          <aside className="relative h-full w-[min(22rem,90vw)] overflow-y-auto border-r border-gray-700 bg-gray-900 p-4 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-white">Filters</h2>
+              <button
+                type="button"
+                onClick={() => setMobileFiltersOpen(false)}
+                className="rounded-md border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800"
+              >
+                Done
+              </button>
+            </div>
+            <IncidentFilters filters={filters} onFilterChange={handleFilterChange} />
+          </aside>
+        </div>
+      )}
+
       {/* Main content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Header bar */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-700 px-3 py-3 sm:px-4">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen(true)}
+              className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-xs text-gray-200 md:hidden"
+            >
+              Filters
+            </button>
             <h1 className="text-lg font-semibold text-white">
               Incident Database
             </h1>
@@ -70,7 +102,7 @@ export default function DatabasePage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-400">Per page:</label>
+            <label className="hidden text-xs text-gray-400 sm:inline">Per page:</label>
             <select
               value={filters.per_page}
               onChange={(e) =>

@@ -22,11 +22,11 @@ export default function AboutPage() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-gray-900 text-white">
-      <div className="max-w-4xl mx-auto px-6 py-10">
+      <div className="max-w-4xl mx-auto px-4 py-8 sm:px-6 sm:py-10">
         {/* Hero */}
         <div className="mb-10">
-          <h1 className="text-4xl font-bold mb-3">About OSAF</h1>
-          <p className="text-lg text-gray-300 leading-relaxed">
+          <h1 className="text-3xl font-bold mb-3 sm:text-4xl">About OSAF</h1>
+          <p className="text-base text-gray-300 leading-relaxed sm:text-lg">
             The <strong>Open Shark Attack File</strong> is an open-source, community-driven
             shark incident database. It provides transparent, publicly accessible records of
             shark-human interactions worldwide — an open alternative to restricted academic
@@ -58,7 +58,7 @@ export default function AboutPage() {
             {[
               {
                 title: "Open Data",
-                desc: "All incident data is public. No gatekeeping behind academic access requests or institutional affiliations.",
+                desc: "Verified, data-minimized incident records are public without academic or institutional gatekeeping.",
               },
               {
                 title: "Community-Driven",
