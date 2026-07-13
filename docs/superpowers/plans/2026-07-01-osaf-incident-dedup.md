@@ -763,7 +763,7 @@ git commit -m "docs: changelog — SP3 incident deduplication"
 
 ## Deployment (after merge, run manually — not a plan task for subagents)
 
-On CT 102: `cd /opt/osaf && git pull --ff-only origin main`, rebuild backend
+On the production host: update the working tree with a fast-forward-only pull, then rebuild the backend image.
 (`docker compose -f docker-compose.yml up -d --build backend`), then
 `docker cp backend/scripts/dedupe_incidents.py osaf-backend-1:/app/scripts/` and run
 the **dry-run** (`docker compose -f docker-compose.yml exec -T backend python -m scripts.dedupe_incidents`),

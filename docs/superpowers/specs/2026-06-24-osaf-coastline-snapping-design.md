@@ -191,6 +191,6 @@ silently start moving good data.
 ## Rollout
 
 1. Land the code + tests.
-2. Deploy collector image to CT 102.
+2. Deploy the collector image to the production host.
 3. Run `backfill_coast_snap --dry-run`, review the moves (expect ~158).
 4. Run for real; spot-check the SA and AU incidents on the map.

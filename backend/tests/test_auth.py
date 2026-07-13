@@ -14,7 +14,7 @@ async def test_register_success(client: AsyncClient):
         json={
             "email": "new@example.com",
             "username": "newuser",
-            "password": "securepassword123",
+            "password": "SecurePassword123!",
             "display_name": "New User",
         },
     )
@@ -35,7 +35,7 @@ async def test_register_duplicate_email(client: AsyncClient, test_user: User):
         json={
             "email": "testuser@example.com",
             "username": "different",
-            "password": "password123",
+            "password": "Password123!",
         },
     )
     assert response.status_code == 409
@@ -49,7 +49,7 @@ async def test_register_duplicate_username(client: AsyncClient, test_user: User)
         json={
             "email": "different@example.com",
             "username": "testuser",
-            "password": "password123",
+            "password": "Password123!",
         },
     )
     assert response.status_code == 409
@@ -76,7 +76,8 @@ async def test_login_success(client: AsyncClient, test_user: User):
     )
     assert response.status_code == 200
     data = response.json()
-    assert "access_token" in data
+    assert "access_token" not in data
+    assert response.cookies.get("access_token")
     assert data["token_type"] == "bearer"
     assert data["user"]["username"] == "testuser"
     assert data["user"]["role"] == "public"
@@ -89,7 +90,8 @@ async def test_login_with_email(client: AsyncClient, test_user: User):
         data={"username": "testuser@example.com", "password": "password123"},
     )
     assert response.status_code == 200
-    assert "access_token" in response.json()
+    assert "access_token" not in response.json()
+    assert response.cookies.get("access_token")
 
 
 @pytest.mark.asyncio

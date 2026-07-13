@@ -198,6 +198,25 @@ export default function AboutPage() {
 
         {/* Contact */}
         <section className="mb-10">
+          <h2 className="text-2xl font-semibold mb-3">Privacy & Corrections</h2>
+          <div className="space-y-3 text-gray-400 text-sm leading-relaxed">
+            <p>
+              Public records are limited to verified incidents and are data-minimized.
+              Victim names, exact ages, narrative injury details, internal source notes,
+              and submission metadata are not published. Map coordinates are rounded.
+            </p>
+            <p>
+              To request a correction or removal, email{" "}
+              <a href="mailto:contact@osaf.net" className="text-blue-400 hover:underline">
+                contact@osaf.net
+              </a>{" "}
+              with the case number and supporting information. Requests involving minors
+              or personal safety are prioritized.
+            </p>
+          </div>
+        </section>
+
+        <section className="mb-10">
           <h2 className="text-2xl font-semibold mb-3">Contact</h2>
           <p className="text-gray-400 text-sm">
             Questions, corrections, or partnership inquiries:{" "}

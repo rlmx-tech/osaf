@@ -28,7 +28,7 @@ An open-source, community-driven alternative to the International Shark Attack F
 | **Charts** | Recharts | Trend dashboards and statistics |
 | **Auth** | JWT (role-based) | Admin, Verified Contributor, Public |
 | **Containerization** | Docker Compose | Full stack in containers |
-| **Target Host** | Hera (AMD Ryzen 7 5700U, 64GB RAM, Debian 13) | Self-hosted homelab machine |
+| **Target Host** | Production container host | Self-hosted deployment |
 
 ---
 
@@ -376,7 +376,6 @@ GET    /api/v1/admin/audit-log               # View changes
 &date_to=2025-12-31                       # Date range end
 &activity=surfing,swimming                # Victim activity
 &severity=fatal,severe                    # Injury severity
-&verification=verified                    # Verification status
 &search=new smyrna beach                  # Full-text search
 &bbox=-82,28,-80,30                       # Bounding box (west,south,east,north)
 &sort=incident_date                       # Sort field
@@ -548,5 +547,5 @@ python -m app.utils.seed_data
 - Coordinates stored as WGS84 (SRID 4326) — standard GPS coordinates.
 - The ISAF is the gold standard for classification methodology. When in doubt, refer to: https://www.floridamuseum.ufl.edu/shark-attacks/about/isaf-case-classifications/
 - **Domain**: osaf.net
-- **Repo**: Forgejo-only — `git.home.rlmx.tech/russ/osaf` (GitHub removed 2026-07-01)
+- **Repo**: Use the repository remote configured for the deployment environment.
 - This project is NOT affiliated with ISAF or the Florida Museum. It is an independent open-source effort.

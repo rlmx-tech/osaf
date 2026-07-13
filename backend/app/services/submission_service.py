@@ -12,7 +12,12 @@ from app.models.audit import IncidentAuditLog
 from app.models.incident import Incident
 from app.models.source import IncidentSource
 from app.models.user import User
-from app.schemas.incident import IncidentCreate, IncidentResponse, PaginatedIncidentResponse, PaginationMeta
+from app.schemas.incident import (
+    IncidentCreate,
+    IncidentResponse,
+    InternalPaginatedIncidentResponse,
+    PaginationMeta,
+)
 from app.services.dedup_service import attach_sources_to_incident, find_duplicate_incident
 from app.services.incident_service import _incident_to_response
 from app.utils.case_number import generate_case_number
@@ -109,7 +114,7 @@ class SubmissionService:
 
     async def list_pending(
         self, page: int = 1, per_page: int = 25
-    ) -> PaginatedIncidentResponse:
+    ) -> InternalPaginatedIncidentResponse:
         """Admin: list pending submissions."""
         query = (
             select(Incident)
@@ -142,7 +147,7 @@ class SubmissionService:
                 data["latitude"] = row.lat
             response_data.append(IncidentResponse(**data))
 
-        return PaginatedIncidentResponse(
+        return InternalPaginatedIncidentResponse(
             data=response_data,
             meta=PaginationMeta(
                 total=total,

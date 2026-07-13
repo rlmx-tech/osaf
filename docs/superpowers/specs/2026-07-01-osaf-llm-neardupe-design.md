@@ -55,7 +55,7 @@ Extract the per-cluster merge body from `scripts/dedupe_incidents.py` into a reu
 ## Safety, rollout, scheduling
 
 - **Dry-run default**, `--apply` gated; every merge audit-logged (`action="merged_llm"`); per-cluster transaction; idempotent.
-- **Rollout:** run the first pass **manually** — dry-run → review the LLM's proposed groupings → `--apply` — to validate the model's judgment on real data. **Then** enable a **nightly cron on CT 102** that runs it with `--apply` (e.g., host cron → `docker compose exec -T backend python -m scripts.dedupe_llm --apply`). Human-in-the-loop for the first validation, automated thereafter.
+- **Rollout:** run the first pass **manually** — dry-run → review the LLM's proposed groupings → `--apply` — to validate the model's judgment on real data. **Then** enable a **nightly cron on the production host** that runs it with `--apply` (e.g., host cron → `docker compose exec -T backend python -m scripts.dedupe_llm --apply`). Human-in-the-loop for the first validation, automated thereafter.
 
 ---
 
@@ -78,7 +78,7 @@ No migration.
 3. `candidate_clusters` blocking + tests.
 4. `adjudicate` (LLM + guardrails + allowlist) + tests (mocked).
 5. `dedupe_llm.run` (dry-run/apply, CLI) + end-to-end test (mocked).
-6. Deploy: add `OLLAMA_*` env to backend on CT 102; run first pass manually (dry-run → review → apply); then add nightly cron.
+6. Deploy: add `OLLAMA_*` environment variables on the production host; run the first pass manually (dry-run → review → apply); then add nightly cron.
 
 ## Risks
 

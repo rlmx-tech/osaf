@@ -6,7 +6,7 @@ An open-source, community-driven shark attack database — a transparent alterna
 
 The ISAF is the world's only scientifically documented comprehensive shark attack database, but its detailed records are restricted to qualified researchers. OSAF makes incident data fully transparent and publicly accessible while using the same proven classification methodology.
 
-- **Open data** — all incident data is public, no gatekeeping
+- **Open data** — verified, data-minimized incident records are public
 - **Community-driven** — public submissions with verification workflow
 - **Faster coverage** — rapid documentation from verified sources
 - **Open source** — codebase and methodology are fully transparent
@@ -49,11 +49,27 @@ Based on the [ISAF methodology](https://www.floridamuseum.ufl.edu/shark-attacks/
 ## Getting Started
 
 ```bash
-# Clone and start the full stack
-git clone https://git.home.rlmx.tech/russ/osaf.git
+# Clone your copy and start the full stack
+git clone <repository-url> osaf
 cd osaf
 docker compose up -d
 ```
+
+Production deployments should set `OSAF_BIND_ADDRESS` to the private address
+used by their trusted reverse proxy. The backend is intentionally available
+only through the bundled Nginx gateway.
+
+## Privacy and corrections
+
+Public API responses include verified incidents only. They omit victim names,
+exact ages, narrative injury details, internal source notes, and submission
+metadata. Published coordinates are rounded to reduce location precision.
+
+To request a correction or removal, email [contact@osaf.net](mailto:contact@osaf.net)
+with the case number and supporting information. Requests involving minors or
+personal safety are prioritized. Full submission records are retained only for
+verification, audit, and correction work and are not exposed by public API
+endpoints.
 
 ## License
 

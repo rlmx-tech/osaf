@@ -10,7 +10,7 @@
 
 Syndicated coverage of one shark event (e.g., a Bahamas attack carried by Yahoo, WCIA, WFLA, KOIN, …) produces **one incident per outlet**. The collector dedups only by **source URL** (`dedup_key = "{platform}:{url}"`), so different URLs for the same event are treated as new incidents. The AI `is_duplicate_likely` check only compares an extraction against its own article text — it never checks the existing incident database.
 
-Observed on prod (CT 102): two records for the same Jun 25 Bahamas attack (OSAF-2026-6574 Yahoo / OSAF-2026-6568 WCIA) with **identical coordinates** (25.0764, −77.3434). A conservative "same date + identical coords" scan finds **202 clusters / ~288 excess incidents** out of 6,587. The SP2 feed backfill (one `news_item` per incident) surfaced these duplicates prominently.
+Observed in production: two records for the same Jun 25 Bahamas attack (OSAF-2026-6574 Yahoo / OSAF-2026-6568 WCIA) had identical coordinates. A conservative same-date/coordinate scan found duplicate clusters that the SP2 feed backfill surfaced prominently.
 
 ## Goal
 
@@ -91,7 +91,7 @@ No migration. Coverage bar: new modules ≥80%.
 2. Shared `_attach_sources_to_incident` helper + wire into `submission_service` (+ `incident_service`) + tests.
 3. `list_news` feed collapse + tests.
 4. `dedupe_incidents.py` script + tests.
-5. Deploy to CT 102 (pull + rebuild backend), run cleanup dry-run → `--apply`, verify feed.
+5. Deploy a rebuilt backend image, run cleanup dry-run → `--apply`, and verify the feed.
 
 ## Risks
 

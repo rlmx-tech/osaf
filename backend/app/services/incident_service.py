@@ -17,6 +17,7 @@ from app.schemas.incident import (
     IncidentUpdate,
     PaginatedIncidentResponse,
     PaginationMeta,
+    PublicIncidentResponse,
 )
 from app.services.dedup_service import attach_sources_to_incident, find_duplicate_incident
 from app.utils.case_number import generate_case_number
@@ -69,6 +70,28 @@ def _incident_to_response(incident: Incident) -> dict:
     return data
 
 
+def _incident_to_public_response(data: dict) -> PublicIncidentResponse:
+    """Apply the public disclosure boundary to a fully populated record."""
+    precision = 2 if data["location_precision"] != "exact" else 3
+    longitude = data.get("longitude")
+    latitude = data.get("latitude")
+    if longitude is not None:
+        longitude = round(longitude, precision)
+    if latitude is not None:
+        latitude = round(latitude, precision)
+
+    return PublicIncidentResponse(
+        **{
+            key: value
+            for key, value in data.items()
+            if key in PublicIncidentResponse.model_fields
+            and key not in {"longitude", "latitude"}
+        },
+        longitude=longitude,
+        latitude=latitude,
+    )
+
+
 class IncidentService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -83,7 +106,6 @@ class IncidentService:
         date_to: str | None = None,
         activity: str | None = None,
         severity: str | None = None,
-        verification: str | None = None,
         report_source: str | None = None,
         search: str | None = None,
         sort: str = "incident_date",
@@ -91,7 +113,11 @@ class IncidentService:
         page: int = 1,
         per_page: int = 50,
     ) -> PaginatedIncidentResponse:
-        query = select(Incident).options(selectinload(Incident.sources))
+        query = (
+            select(Incident)
+            .options(selectinload(Incident.sources))
+            .where(Incident.verification_status == "verified")
+        )
 
         # Filters
         if classification:
@@ -126,9 +152,6 @@ class IncidentService:
         if severity:
             values = [v.strip() for v in severity.split(",")]
             query = query.where(Incident.victim_injury_severity.in_(values))
-
-        if verification:
-            query = query.where(Incident.verification_status == verification)
 
         if report_source:
             values = [v.strip() for v in report_source.split(",")]
@@ -188,7 +211,7 @@ class IncidentService:
                 row = coord_result.one()
                 data["longitude"] = row.lon
                 data["latitude"] = row.lat
-            response_data.append(IncidentResponse(**data))
+            response_data.append(_incident_to_public_response(data))
 
         return PaginatedIncidentResponse(
             data=response_data,
@@ -223,6 +246,33 @@ class IncidentService:
             data["latitude"] = row.lat
 
         return IncidentResponse(**data)
+
+    async def get_public_incident(self, incident_id: UUID) -> PublicIncidentResponse:
+        result = await self.db.execute(
+            select(Incident)
+            .options(selectinload(Incident.sources))
+            .where(
+                Incident.id == incident_id,
+                Incident.verification_status == "verified",
+            )
+        )
+        incident = result.scalar_one_or_none()
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+
+        data = _incident_to_response(incident)
+        if incident.coordinates is not None:
+            coord_result = await self.db.execute(
+                select(
+                    ST_X(Incident.coordinates).label("lon"),
+                    ST_Y(Incident.coordinates).label("lat"),
+                ).where(Incident.id == incident.id)
+            )
+            row = coord_result.one()
+            data["longitude"] = row.lon
+            data["latitude"] = row.lat
+
+        return _incident_to_public_response(data)
 
     async def create_incident(self, data: IncidentCreate) -> IncidentResponse:
         existing = await find_duplicate_incident(self.db, data)

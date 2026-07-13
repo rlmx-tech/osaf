@@ -58,7 +58,7 @@ No migration.
 ## Build order
 
 1. `ATTACK_CLASSIFICATIONS` constant + filter every `stats_service` aggregate + tests.
-2. Deploy: backend `app/` is live-mounted on CT 102 → `git pull` + `restart backend`; verify `/api/v1/stats/overview` total dropped by the sighting/non-attack count.
+2. Deploy a rebuilt backend image to the production host; verify `/api/v1/stats/overview` total dropped by the sighting/non-attack count.
 
 ## Risks
 

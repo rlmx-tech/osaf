@@ -6,7 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.services.incident_service import ALLOWED_SORT_FIELDS, _incident_to_response
+from app.services.incident_service import (
+    ALLOWED_SORT_FIELDS,
+    _incident_to_public_response,
+    _incident_to_response,
+)
 
 
 class TestAllowedSortFields:
@@ -138,3 +142,37 @@ class TestIncidentToResponse:
         }
         for key in expected_keys:
             assert key in result, f"Missing key: {key}"
+
+
+class TestIncidentToPublicResponse:
+    def test_sensitive_fields_are_not_published(self):
+        incident = TestIncidentToResponse()._make_incident(
+            victim_name="Private Person",
+            victim_age=12,
+            victim_injury_description="Private medical detail",
+            description="Narrative containing personal details",
+        )
+        data = _incident_to_response(incident)
+        result = _incident_to_public_response(data).model_dump()
+
+        for field in {
+            "victim_name",
+            "victim_age",
+            "victim_injury_description",
+            "description",
+            "incident_time",
+            "submitted_at",
+            "updated_at",
+        }:
+            assert field not in result
+
+    def test_coordinates_are_rounded(self):
+        incident = TestIncidentToResponse()._make_incident()
+        data = _incident_to_response(incident)
+        data["longitude"] = -80.927456
+        data["latitude"] = 29.026789
+
+        result = _incident_to_public_response(data)
+
+        assert result.longitude == -80.927
+        assert result.latitude == 29.027

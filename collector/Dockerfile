@@ -10,9 +10,15 @@ RUN apt-get update && \
 COPY pyproject.toml .
 RUN pip install --no-cache-dir .
 
-COPY . .
+COPY . ./collector
 
 # State persistence volume
 RUN mkdir -p /app/data
+
+RUN groupadd --gid 10001 osaf && \
+    useradd --uid 10001 --gid osaf --no-create-home --shell /usr/sbin/nologin osaf && \
+    chown -R osaf:osaf /app
+
+USER 10001:10001
 
 CMD ["python", "-m", "collector.main"]

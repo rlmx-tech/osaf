@@ -781,7 +781,7 @@ git commit -m "docs: changelog — SP4 LLM near-dupe merge"
 
 ## Deployment (after merge — not a subagent task)
 
-On CT 102: add `OLLAMA_URL`, `OLLAMA_API_KEY`, `OLLAMA_MODEL` to `/opt/osaf/.env` (reuse the collector's Ollama key), then `git pull` and **rebuild** the backend image (httpx dep + scripts baked):
+On the production host: add `OLLAMA_URL`, `OLLAMA_API_KEY`, and `OLLAMA_MODEL` to the protected environment file, update the working tree, then **rebuild** the backend image (httpx dependency and scripts baked in):
 `docker compose -f docker-compose.yml up -d --build backend`. Run the first pass manually: `docker compose -f docker-compose.yml exec -T backend python -m scripts.dedupe_llm` (dry-run) → review the proposed groups → `--apply`. Then add a nightly host cron: `docker compose -f docker-compose.yml exec -T backend python -m scripts.dedupe_llm --apply`.
 
 ---

@@ -31,19 +31,30 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-https://ollama.com}
       OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-glm-5.2:cloud}
-    ports:
-      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - ./backend/app:/app/app
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
   frontend:
     build: ./frontend
     restart: unless-stopped
     depends_on:
       - backend
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/cache/nginx:size=32m,mode=0755
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
   collector:
     build: ./collector
@@ -61,18 +72,35 @@ services:
       - backend
     volumes:
       - collector_data:/app/data
-      - ./collector:/app/collector
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
   nginx:
-    image: nginx:alpine
+    image: nginxinc/nginx-unprivileged:alpine
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "${OSAF_BIND_ADDRESS:-127.0.0.1}:${OSAF_BIND_PORT:-80}:8080"
+    environment:
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1/32}
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro
     depends_on:
       - backend
       - frontend
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/cache/nginx:size=32m,mode=0755
+      - /etc/nginx/conf.d:size=1m,uid=101,gid=101,mode=0755
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   pgdata:

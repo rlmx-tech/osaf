@@ -11,4 +11,10 @@ RUN pip install --no-cache-dir -e .
 
 COPY . .
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+RUN groupadd --gid 10001 osaf && \
+    useradd --uid 10001 --gid osaf --no-create-home --shell /usr/sbin/nologin osaf && \
+    chown -R osaf:osaf /app
+
+USER 10001:10001
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

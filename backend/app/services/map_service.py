@@ -108,6 +108,8 @@ class MapService:
         for row in rows:
             import json
             geometry = json.loads(row.geojson)
+            # Public map points are approximate, not household-level coordinates.
+            geometry["coordinates"] = [round(value, 3) for value in geometry["coordinates"]]
             features.append({
                 "type": "Feature",
                 "geometry": geometry,

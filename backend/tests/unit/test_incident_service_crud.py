@@ -195,16 +195,6 @@ class TestListIncidents:
         result = await service.list_incidents(severity="fatal,severe")
         assert result.data == []
 
-    async def test_with_verification_filter(self):
-        db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[
-            _scalar_result(0),
-            _scalars_unique_all([]),
-        ])
-        service = IncidentService(db)
-        result = await service.list_incidents(verification="verified")
-        assert result.data == []
-
     async def test_with_search_filter(self):
         db = AsyncMock()
         db.execute = AsyncMock(side_effect=[

@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,6 +27,22 @@ class SourceResponse(SourceCreate):
     created_at: datetime
 
 
+class PublicSourceResponse(BaseModel):
+    """Source fields that are safe to publish.
+
+    Internal notes and database linkage metadata deliberately stay in the
+    authenticated/admin response model.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    source_type: str
+    source_url: str | None = None
+    source_title: str | None = None
+    source_publisher: str | None = None
+    source_date: date | None = None
+
+
 class IncidentBase(BaseModel):
     incident_date: date | None = None
     incident_time: time | None = None
@@ -37,7 +54,20 @@ class IncidentBase(BaseModel):
     body_of_water: str | None = Field(None, max_length=200)
     coordinates: CoordinatesSchema | None = None
     location_precision: str = Field("exact", max_length=20)
-    classification: str = Field(..., max_length=20)
+    classification: Literal[
+        "unprovoked",
+        "provoked",
+        "boat_bite",
+        "scavenge",
+        "aquaria",
+        "doubtful",
+        "no_assignment",
+        "not_confirmed",
+        "sighting",
+        "near_miss",
+        "equipment_bite",
+        "unverified_report",
+    ]
     classification_subtype: str | None = Field(None, max_length=20)
     provocation_subtype: str | None = Field(None, max_length=20)
     report_source: str | None = Field(None, max_length=50)
@@ -72,7 +102,20 @@ class IncidentUpdate(BaseModel):
     body_of_water: str | None = None
     coordinates: CoordinatesSchema | None = None
     location_precision: str | None = None
-    classification: str | None = None
+    classification: Literal[
+        "unprovoked",
+        "provoked",
+        "boat_bite",
+        "scavenge",
+        "aquaria",
+        "doubtful",
+        "no_assignment",
+        "not_confirmed",
+        "sighting",
+        "near_miss",
+        "equipment_bite",
+        "unverified_report",
+    ] | None = None
     classification_subtype: str | None = None
     provocation_subtype: str | None = None
     report_source: str | None = None
@@ -130,6 +173,38 @@ class IncidentResponse(BaseModel):
     sources: list[SourceResponse] = Field(default_factory=list)
 
 
+class PublicIncidentResponse(BaseModel):
+    """Data-minimized representation for unauthenticated endpoints."""
+
+    id: UUID
+    case_number: str
+    incident_date: date | None = None
+    date_precision: str
+    location_description: str
+    country: str
+    state_province: str | None = None
+    county_region: str | None = None
+    body_of_water: str | None = None
+    longitude: float | None = None
+    latitude: float | None = None
+    location_precision: str
+    classification: str
+    classification_subtype: str | None = None
+    provocation_subtype: str | None = None
+    report_source: str | None = None
+    report_platform: str | None = None
+    shark_species_confirmed: str | None = None
+    shark_species_suspected: str | None = None
+    shark_size_estimate: str | None = None
+    species_identification_method: str | None = None
+    victim_activity: str | None = None
+    victim_injury_severity: str | None = None
+    victim_sex: str | None = None
+    fatal: bool
+    verification_status: str
+    sources: list[PublicSourceResponse] = Field(default_factory=list)
+
+
 class PaginationMeta(BaseModel):
     total: int
     page: int
@@ -138,5 +213,12 @@ class PaginationMeta(BaseModel):
 
 
 class PaginatedIncidentResponse(BaseModel):
+    data: list[PublicIncidentResponse]
+    meta: PaginationMeta
+
+
+class InternalPaginatedIncidentResponse(BaseModel):
+    """Authenticated review-queue representation with full record data."""
+
     data: list[IncidentResponse]
     meta: PaginationMeta

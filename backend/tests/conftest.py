@@ -14,6 +14,7 @@ os.environ.setdefault("POSTGRES_USER", "osaf")
 os.environ.setdefault("POSTGRES_PASSWORD", os.environ.get("POSTGRES_PASSWORD", "testpassword"))
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
+os.environ.setdefault("APP_ENV", "development")
 
 from datetime import date, time
 from uuid import UUID

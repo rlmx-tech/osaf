@@ -234,7 +234,7 @@ git commit -m "docs: changelog — SP5 attack-stats exclusion"
 
 ## Deployment (after merge — not a subagent task)
 
-Backend `app/` is live-mounted on CT 102: `cd /opt/osaf && git pull --ff-only origin main && docker compose -f docker-compose.yml restart backend`. Verify: `curl -s http://localhost/api/v1/stats/overview` — `total_incidents` should drop by the count of non-attack classifications.
+Deploy a rebuilt backend image on the production host. Verify `/api/v1/stats/overview` — `total_incidents` should drop by the count of non-attack classifications.
 
 ---
 

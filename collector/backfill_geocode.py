@@ -3,7 +3,7 @@
 Only fixes incidents where Nominatim returns a valid result within the expected
 state/region. Skips incidents where the current coordinates are reasonable.
 
-Usage (from CT 102):
+Usage (from the production deployment directory):
     docker compose exec collector python -m collector.backfill_geocode [--dry-run] [--limit N]
 """
 

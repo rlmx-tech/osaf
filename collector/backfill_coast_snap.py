@@ -8,7 +8,7 @@ instant and not rate-limited — and moves the obvious inland errors to the coas
 Specific-location incidents are never touched, so genuine inland river/lake
 incidents are preserved.
 
-Usage (from CT 102):
+Usage (from the production deployment directory):
     docker compose exec collector python -m collector.backfill_coast_snap [--dry-run] [--limit N]
 """
 

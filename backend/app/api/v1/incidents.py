@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.incident import (
     IncidentCreate,
+    PublicIncidentResponse,
     IncidentResponse,
     IncidentUpdate,
     PaginatedIncidentResponse,
@@ -27,7 +28,6 @@ async def list_incidents(
     date_to: str | None = Query(None, description="End date (YYYY-MM-DD)"),
     activity: str | None = Query(None, description="Comma-separated activities"),
     severity: str | None = Query(None, description="Comma-separated severities"),
-    verification: str | None = Query(None, description="Verification status"),
     report_source: str | None = Query(None, description="Comma-separated report sources"),
     search: str | None = Query(None, max_length=200, description="Full-text search"),
     sort: str = Query("incident_date", description="Sort field"),
@@ -46,7 +46,6 @@ async def list_incidents(
         date_to=date_to,
         activity=activity,
         severity=severity,
-        verification=verification,
         report_source=report_source,
         search=search,
         sort=sort,
@@ -56,13 +55,13 @@ async def list_incidents(
     )
 
 
-@router.get("/{incident_id}", response_model=IncidentResponse)
+@router.get("/{incident_id}", response_model=PublicIncidentResponse)
 async def get_incident(
     incident_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
     service = IncidentService(db)
-    return await service.get_incident(incident_id)
+    return await service.get_public_incident(incident_id)
 
 
 @router.post("", response_model=IncidentResponse, status_code=201)

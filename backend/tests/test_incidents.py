@@ -84,9 +84,7 @@ async def test_create_incident_invalid_classification(
         },
         headers=auth_header(admin_user),
     )
-    # The DB CHECK constraint will cause a 500 since the API doesn't validate
-    # classification values before insert
-    assert response.status_code == 500
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -109,6 +107,55 @@ async def test_get_incident_not_found(client: AsyncClient):
     response = await client.get(f"/api/v1/incidents/{fake_id}")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["pending", "needs_review", "rejected"])
+async def test_unverified_incident_is_not_public(client: AsyncClient, db, status):
+    incident = Incident(
+        case_number="OSAF-2025-0998",
+        location_description="Private review record",
+        country="TestCountry",
+        classification="unprovoked",
+        verification_status=status,
+        victim_name="Private Person",
+    )
+    db.add(incident)
+    await db.commit()
+    await db.refresh(incident)
+
+    list_response = await client.get("/api/v1/incidents")
+    detail_response = await client.get(f"/api/v1/incidents/{incident.id}")
+
+    assert list_response.status_code == 200
+    assert list_response.json()["meta"]["total"] == 0
+    assert detail_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_public_incident_is_data_minimized(
+    client: AsyncClient, sample_incident: Incident, db
+):
+    incident_id = sample_incident.id
+    sample_incident.victim_name = "Private Person"
+    sample_incident.victim_age = 12
+    await db.flush()
+
+    response = await client.get(f"/api/v1/incidents/{incident_id}")
+
+    assert response.status_code == 200
+    data = response.json()
+    for field in {
+        "victim_name",
+        "victim_age",
+        "victim_injury_description",
+        "description",
+        "incident_time",
+        "submitted_at",
+        "updated_at",
+    }:
+        assert field not in data
+    assert "source_notes" not in data["sources"][0]
 
 
 @pytest.mark.asyncio
@@ -140,6 +187,7 @@ async def test_list_incidents_pagination(client: AsyncClient, db):
             location_description=f"Beach {i}",
             country="TestCountry",
             classification="unprovoked",
+            verification_status="verified",
         )
         db.add(incident)
     await db.commit()
@@ -169,6 +217,7 @@ async def test_list_incidents_filter_classification(
         location_description="Another beach",
         country="Bahamas",
         classification="provoked",
+        verification_status="verified",
     )
     db.add(provoked)
     await db.commit()
@@ -200,6 +249,7 @@ async def test_list_incidents_filter_fatal(client: AsyncClient, db):
         country="USA",
         classification="unprovoked",
         fatal=False,
+        verification_status="verified",
     )
     fatal = Incident(
         case_number="OSAF-2025-0051",
@@ -207,6 +257,7 @@ async def test_list_incidents_filter_fatal(client: AsyncClient, db):
         country="Australia",
         classification="unprovoked",
         fatal=True,
+        verification_status="verified",
     )
     db.add_all([nonfatal, fatal])
     await db.commit()
@@ -244,6 +295,7 @@ async def test_list_incidents_sort_order(client: AsyncClient, db):
         country="A-Country",
         classification="unprovoked",
         incident_date=date(2025, 1, 1),
+        verification_status="verified",
     )
     i2 = Incident(
         case_number="OSAF-2025-0061",
@@ -251,6 +303,7 @@ async def test_list_incidents_sort_order(client: AsyncClient, db):
         country="B-Country",
         classification="unprovoked",
         incident_date=date(2025, 6, 1),
+        verification_status="verified",
     )
     db.add_all([i1, i2])
     await db.commit()
