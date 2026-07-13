@@ -1,5 +1,8 @@
+from datetime import datetime, timezone
+
 import pytest
 from sqlalchemy import select
+
 from app.models.news import NewsItem
 
 
@@ -95,6 +98,54 @@ async def test_service_list_filters_by_csv_event_type(db):
         ))
     multi = await svc.list_news(event_type="sighting,attack")
     assert multi.meta.total == 2
+
+
+@pytest.mark.asyncio
+async def test_service_list_sorts_by_publication_date_descending(db):
+    from app.services.news_service import NewsService
+
+    items = [
+        NewsItem(
+            dedup_key="news_rss:https://sort/old",
+            source_platform="news_rss",
+            source_name="N",
+            source_url="https://sort/old",
+            title="Old publication captured last",
+            published_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            captured_at=datetime(2026, 7, 3, tzinfo=timezone.utc),
+            event_type="news",
+        ),
+        NewsItem(
+            dedup_key="news_rss:https://sort/new",
+            source_platform="news_rss",
+            source_name="N",
+            source_url="https://sort/new",
+            title="Newest publication",
+            published_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            captured_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+            event_type="news",
+        ),
+        NewsItem(
+            dedup_key="news_rss:https://sort/undated",
+            source_platform="news_rss",
+            source_name="N",
+            source_url="https://sort/undated",
+            title="Undated publication",
+            published_at=None,
+            captured_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            event_type="news",
+        ),
+    ]
+    db.add_all(items)
+    await db.commit()
+
+    listed = await NewsService(db).list_news()
+
+    assert [item.dedup_key for item in listed.data] == [
+        "news_rss:https://sort/new",
+        "news_rss:https://sort/undated",
+        "news_rss:https://sort/old",
+    ]
 
 
 @pytest.mark.asyncio

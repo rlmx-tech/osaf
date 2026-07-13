@@ -91,13 +91,22 @@ class NewsService:
             like = f"%{safe_search}%"
             filters.append(or_(NewsItem.title.ilike(like), NewsItem.summary.ilike(like)))
 
-        # Collapse promoted rows to one per incident (newest captured_at); general
-        # rows (no promoted_incident_id) each form their own partition, so all kept.
+        # Publication time is the date readers see in the feed. Fall back to
+        # capture time for sources that do not provide one.
+        sort_date = func.coalesce(NewsItem.published_at, NewsItem.captured_at)
+
+        # Collapse promoted rows to the most recently published item per incident;
+        # general rows each form their own partition, so all are kept.
         partition = func.coalesce(
             cast(NewsItem.promoted_incident_id, String), cast(NewsItem.id, String)
         )
         rn = func.row_number().over(
-            partition_by=partition, order_by=NewsItem.captured_at.desc()
+            partition_by=partition,
+            order_by=(
+                sort_date.desc(),
+                NewsItem.captured_at.desc(),
+                NewsItem.id.desc(),
+            ),
         ).label("rn")
 
         ranked = select(NewsItem, rn).where(*filters).subquery()
@@ -114,7 +123,11 @@ class NewsService:
             await self.db.execute(
                 select(item)
                 .where(ranked.c.rn == 1)
-                .order_by(ranked.c.captured_at.desc())
+                .order_by(
+                    func.coalesce(ranked.c.published_at, ranked.c.captured_at).desc(),
+                    ranked.c.captured_at.desc(),
+                    ranked.c.id.desc(),
+                )
                 .offset(offset)
                 .limit(per_page)
             )

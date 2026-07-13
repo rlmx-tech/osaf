@@ -7,6 +7,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Shark News now sorts by publication date, newest first.** The feed previously
+  sorted by collector capture time, causing backfilled older stories to appear
+  above newer reporting. Items without a publication timestamp fall back to
+  capture time, with deterministic tie-breaking for stable pagination.
+
 - **Long aggregator URLs no longer fail evidence capture.** Deduplication keys
   longer than the database/API limit now use a stable SHA-256 URL fingerprint.
 
