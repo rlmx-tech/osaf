@@ -1,5 +1,6 @@
 """Unit tests for IncidentService CRUD — mocked DB, no PostgreSQL required."""
 
+import inspect
 import uuid
 from datetime import date, datetime, time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -279,3 +280,78 @@ class TestUpdateIncident:
         with pytest.raises(HTTPException) as exc:
             await service.update_incident(uuid.uuid4(), IncidentUpdate())
         assert exc.value.status_code == 404
+
+
+_VERIFIED_PREDICATE = "verification_status = 'verified'"
+
+
+def _render(query) -> str:
+    """Compile a query to SQL with literal values inlined.
+
+    Plain ``str(query)`` is useless for asserting on a WHERE clause here:
+    ``select(Incident)`` renders every column, so the bare string
+    "verification_status" appears whether or not the filter exists. Only the
+    literal-bound predicate distinguishes a filtered query from an unfiltered
+    one.
+    """
+    return str(query.compile(compile_kwargs={"literal_binds": True}))
+
+
+class TestVerifiedOnlyInvariant:
+    """Public reads are constrained to verified incidents, always.
+
+    Ported from a March-era test that called
+    ``list_incidents(verification="verified")``. That parameter no longer
+    exists: ff96d38 ("harden public disclosure") removed the caller-controlled
+    filter and made the constraint unconditional, so the public API cannot be
+    asked for unverified incidents at all.
+
+    Reinstating the original test would have re-tested a removed security hole.
+    These tests check the invariant that replaced it, and fail loudly if the
+    hardening is ever undone.
+    """
+
+    async def test_every_list_query_constrains_to_verified(self):
+        """Both the count and the page query must carry the filter.
+
+        The count wraps the filtered query as a subquery. If that ever stops
+        being true, `meta.total` would count unverified incidents and leak how
+        many exist, even though none of them are returned.
+        """
+        db = AsyncMock()
+        db.execute = AsyncMock(
+            side_effect=[_scalar_result(0), _scalars_unique_all([])]
+        )
+        service = IncidentService(db)
+        await service.list_incidents()
+
+        assert db.execute.await_count == 2
+        for call in db.execute.await_args_list:
+            assert _VERIFIED_PREDICATE in _render(call.args[0])
+
+    async def test_list_incidents_accepts_no_verification_override(self):
+        """Regression guard for ff96d38.
+
+        If someone re-adds a `verification` parameter, this fails and points at
+        the reason it was removed.
+        """
+        assert (
+            "verification"
+            not in inspect.signature(IncidentService.list_incidents).parameters
+        )
+        with pytest.raises(TypeError):
+            await IncidentService(AsyncMock()).list_incidents(
+                verification="unverified"
+            )
+
+    async def test_get_public_incident_constrains_to_verified(self):
+        """The single-incident public read carries the same constraint."""
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_scalar_none_result())
+        service = IncidentService(db)
+
+        with pytest.raises(HTTPException) as exc:
+            await service.get_public_incident(uuid.uuid4())
+        assert exc.value.status_code == 404
+
+        assert _VERIFIED_PREDICATE in _render(db.execute.await_args_list[0].args[0])
