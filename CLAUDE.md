@@ -517,8 +517,17 @@ alembic upgrade head            # Apply migrations
 alembic revision --autogenerate -m "description"  # Create migration
 
 # Run tests
-cd backend
-pytest -v
+# The suite needs PostgreSQL+PostGIS and drops every table on teardown, so it
+# runs against a disposable tmpfs container, never the dev/prod `db` service.
+docker compose -f docker-compose.test.yml up -d --wait
+cd backend && uv run --extra dev pytest -q
+docker compose -f docker-compose.test.yml down   # when finished
+
+# conftest.py refuses to run if POSTGRES_HOST is not local or POSTGRES_DB does
+# not end in _test/_testing, and exits 1 so CI cannot mistake a refusal for a pass.
+
+# Collector tests need no database:
+cd collector && uv run --with pytest --with pytest-asyncio pytest -q
 
 # Seed database
 cd backend

@@ -7,6 +7,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **The backend test suite is runnable again, and can no longer drop a real
+  database.** 142 of its 306 tests errored with `ConnectionRefusedError`
+  because they need PostgreSQL+PostGIS and the `db` service publishes no
+  ports — correctly, since production keeps Postgres off the host. Rather
+  than weaken that, a new `docker-compose.test.yml` runs a disposable
+  tmpfs-backed `postgis/postgis:16-3.4` bound to `127.0.0.1:5432` (same major
+  version as production; `fsync=off` since the data is discarded anyway).
+  Separately, `conftest.py` set its connection details with
+  `os.environ.setdefault`, which yields to anything already exported, while
+  its session fixture calls `Base.metadata.drop_all` on teardown — so a stray
+  `export POSTGRES_HOST=...` on a machine that also administers production
+  turned `pytest` into a production table drop. The suite now refuses to start
+  unless the host is local and the database name ends in `_test`/`_testing`,
+  and exits 1 so CI cannot read a refusal as a pass. Default test database
+  renamed `osaf` → `osaf_test`. Full suite: 306 passed.
+
 - **Marine incidents no longer accept arbitrary inland geocodes.** Nominatim
   candidates are state-bounded, ranked by coastal plausibility, and nearby
   coastal place centroids are snapped to the waterline. Australian state

@@ -1,20 +1,78 @@
 """Test configuration and fixtures for OSAF backend tests.
 
-Requires the Docker Compose stack to be running (PostgreSQL+PostGIS on localhost:5432).
-Tests use the same database with table cleanup between tests for isolation.
+Requires the disposable test database to be running:
+
+    docker compose -f docker-compose.test.yml up -d --wait
+
+That is a throwaway tmpfs container on 127.0.0.1:5432, deliberately separate
+from the `db` service in docker-compose.yml. setup_database() below drops every
+table on session teardown, so the suite must never address a database holding
+dev or production data. _assert_disposable_database() enforces that.
+
+Tests share the one database, with table cleanup between tests for isolation.
 """
 
 import os
+import sys
 
 # Set environment variables BEFORE any app imports
 os.environ.setdefault("POSTGRES_HOST", "localhost")
 os.environ.setdefault("POSTGRES_PORT", "5432")
-os.environ.setdefault("POSTGRES_DB", "osaf")
+os.environ.setdefault("POSTGRES_DB", "osaf_test")
 os.environ.setdefault("POSTGRES_USER", "osaf")
 os.environ.setdefault("POSTGRES_PASSWORD", os.environ.get("POSTGRES_PASSWORD", "testpassword"))
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
 os.environ.setdefault("APP_ENV", "development")
+
+# Hosts that can only mean a database on this machine. Anything else — a LAN
+# address, a hostname, the compose service name `db` — is refused.
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+# The suite drops every table, so the database name must say it is disposable.
+_DISPOSABLE_DB_SUFFIXES = ("_test", "_testing")
+
+
+def _assert_disposable_database() -> None:
+    """Refuse to run unless the target database is local and disposable.
+
+    The settings above use os.environ.setdefault, which yields to anything
+    already exported. On a machine that also administers the production host,
+    a stray `export POSTGRES_HOST=...` would otherwise turn `pytest` into a
+    production table drop. Fail loudly here instead, before any connection.
+    """
+    host = os.environ["POSTGRES_HOST"]
+    database = os.environ["POSTGRES_DB"]
+
+    if host not in _LOCAL_HOSTS:
+        _refuse(
+            f"POSTGRES_HOST is {host!r}, which is not one of {sorted(_LOCAL_HOSTS)}.",
+            "The suite drops every table on teardown and must only ever "
+            "address the local throwaway container.",
+        )
+
+    if not database.endswith(_DISPOSABLE_DB_SUFFIXES):
+        _refuse(
+            f"POSTGRES_DB is {database!r}, which does not end in "
+            f"{' or '.join(_DISPOSABLE_DB_SUFFIXES)}.",
+            "That naming is what marks a database as safe to drop.",
+        )
+
+
+def _refuse(problem: str, consequence: str) -> None:
+    """Abort the session with a message that survives pytest output capture."""
+    message = (
+        f"\nREFUSING TO RUN TESTS: {problem}\n"
+        f"{consequence}\n\n"
+        "Start the intended database with:\n"
+        "    docker compose -f docker-compose.test.yml up -d --wait\n"
+        "and unset any POSTGRES_* variables pointing elsewhere.\n"
+    )
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+_assert_disposable_database()
 
 from datetime import date, time
 from uuid import UUID

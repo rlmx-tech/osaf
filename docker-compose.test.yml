@@ -1,0 +1,43 @@
+# Disposable PostgreSQL+PostGIS for the backend test suite.
+#
+# Deliberately separate from the `db` service in docker-compose.yml:
+#
+#   - tests/conftest.py runs Base.metadata.drop_all() on session teardown, so
+#     the suite must never share a database with dev or production data.
+#   - the production `db` service publishes no ports; that stays true. This
+#     file binds to 127.0.0.1 only, so the test database is not LAN-reachable.
+#   - storage is tmpfs, so the database is discarded when the container stops.
+#
+# The credentials below are not secrets. They match the defaults in
+# tests/conftest.py so `uv run pytest` works with no environment setup, and
+# they only ever address a throwaway localhost container.
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d --wait
+#   cd backend && uv run --extra dev pytest -q
+#   docker compose -f docker-compose.test.yml down
+
+services:
+  testdb:
+    image: postgis/postgis:16-3.4
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: osaf_test
+      POSTGRES_USER: osaf
+      POSTGRES_PASSWORD: testpassword
+      # The data directory is thrown away on every stop, so durability costs
+      # buy nothing here. Skipping fsync speeds up create_all/drop_all cycles.
+      POSTGRES_INITDB_ARGS: "--nosync"
+    command: >
+      postgres
+      -c fsync=off
+      -c synchronous_commit=off
+      -c full_page_writes=off
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U osaf -d osaf_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
