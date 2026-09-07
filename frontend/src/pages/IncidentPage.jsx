@@ -8,6 +8,7 @@ import {
 } from "../utils/constants";
 import { formatDate, formatSpecies, formatCoordinates } from "../utils/formatters";
 import { useSEO } from "../utils/useSEO";
+import { safeUrl } from "../utils/safeUrl";
 
 // Build SEO title/description from an incident record, skipping missing fields.
 function incidentSEO(incident, id) {
@@ -32,16 +33,6 @@ function incidentSEO(incident, id) {
   desc += ` Outcome: ${incident.fatal ? "fatal" : "non-fatal"}.`;
   if (incident.case_number) desc += ` Case ${incident.case_number}, Open Shark Attack File.`;
   return { title, description: desc, path: `/incidents/${id}` };
-}
-
-function isSafeUrl(url) {
-  if (!url) return false;
-  try {
-    const { protocol } = new URL(url);
-    return protocol === "https:" || protocol === "http:";
-  } catch {
-    return false;
-  }
 }
 
 function Field({ label, value, className = "" }) {
@@ -271,7 +262,9 @@ export default function IncidentPage() {
               Sources
             </h3>
             <div className="space-y-2">
-              {incident.sources.map((source) => (
+              {incident.sources.map((source) => {
+                const sourceHref = safeUrl(source.source_url);
+                return (
                 <div
                   key={source.id}
                   className="bg-gray-800/50 rounded p-3 text-sm"
@@ -290,9 +283,9 @@ export default function IncidentPage() {
                       {source.source_date && ` — ${formatDate(source.source_date)}`}
                     </p>
                   )}
-                  {isSafeUrl(source.source_url) && (
+                  {sourceHref && (
                     <a
-                      href={source.source_url}
+                      href={sourceHref}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-blue-400 hover:text-blue-300 mt-1 inline-block"
@@ -306,7 +299,8 @@ export default function IncidentPage() {
                     </p>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

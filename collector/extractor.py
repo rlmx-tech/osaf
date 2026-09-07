@@ -202,11 +202,19 @@ def _normalize_bool(value: object, default: bool = False) -> bool:
 
 
 def _parse_json_response(text: str) -> dict | None:
-    """Extract JSON from Ollama response, handling markdown code blocks."""
+    """Extract a JSON object from an Ollama response (plain, fenced, or embedded).
+
+    Every path checks isinstance(dict) before returning. Valid JSON that is not
+    an object — an array of results, a bare string, a number — must come back as
+    None, because callers go straight to .get() and would otherwise raise
+    AttributeError on a response the model is perfectly capable of producing.
+    """
+    text = (text or "").strip()
+
     # Try direct parse first
-    text = text.strip()
     try:
-        return json.loads(text)
+        value = json.loads(text)
+        return value if isinstance(value, dict) else None
     except json.JSONDecodeError:
         pass
 
@@ -214,7 +222,8 @@ def _parse_json_response(text: str) -> dict | None:
     match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group(1).strip())
+            value = json.loads(match.group(1).strip())
+            return value if isinstance(value, dict) else None
         except json.JSONDecodeError:
             pass
 
@@ -223,7 +232,8 @@ def _parse_json_response(text: str) -> dict | None:
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
         try:
-            return json.loads(text[start : end + 1])
+            value = json.loads(text[start : end + 1])
+            return value if isinstance(value, dict) else None
         except json.JSONDecodeError:
             pass
 

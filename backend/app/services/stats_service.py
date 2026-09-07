@@ -1,4 +1,4 @@
-from sqlalchemy import case, extract, func, select
+from sqlalchemy import and_, case, extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.incident import Incident
@@ -9,6 +9,18 @@ from app.models.incident import Incident
 ATTACK_CLASSIFICATIONS = ("unprovoked", "provoked", "boat_bite", "scavenge", "aquaria")
 
 _ATTACK_FILTER = Incident.classification.in_(ATTACK_CLASSIFICATIONS)
+
+# Stats are a public read path, so they carry the same verified-only constraint
+# as list_incidents (incident_service.py) and the map (map_service.py).
+# Registration is open and any authenticated user can submit, so aggregating
+# unverified rows would let anyone move the public headline numbers — and would
+# keep counting an incident an admin had already rejected as a hoax.
+_VERIFIED_FILTER = Incident.verification_status == "verified"
+
+# Deliberately one combined constant rather than two applied side by side: a
+# query added later cannot pick up the classification filter and silently miss
+# the verification one.
+_PUBLIC_ATTACK_FILTER = and_(_ATTACK_FILTER, _VERIFIED_FILTER)
 
 
 class StatsService:
@@ -29,17 +41,17 @@ class StatsService:
 
     async def overview(self) -> dict:
         total = (await self.db.execute(
-            select(func.count()).select_from(Incident).where(_ATTACK_FILTER)
+            select(func.count()).select_from(Incident).where(_PUBLIC_ATTACK_FILTER)
         )).scalar_one()
 
         fatal_count = (await self.db.execute(
             select(func.count()).select_from(Incident)
-            .where(_ATTACK_FILTER, Incident.fatal.is_(True))
+            .where(_PUBLIC_ATTACK_FILTER, Incident.fatal.is_(True))
         )).scalar_one()
 
         top_country = (await self.db.execute(
             select(Incident.country)
-            .where(_ATTACK_FILTER)
+            .where(_PUBLIC_ATTACK_FILTER)
             .group_by(Incident.country)
             .order_by(func.count().desc())
             .limit(1)
@@ -48,18 +60,18 @@ class StatsService:
         species_label = self._species_label()
         top_species = (await self.db.execute(
             select(species_label)
-            .where(_ATTACK_FILTER, species_label.is_not(None))
+            .where(_PUBLIC_ATTACK_FILTER, species_label.is_not(None))
             .group_by(species_label)
             .order_by(func.count().desc())
             .limit(1)
         )).scalar_one_or_none()
 
         min_year = (await self.db.execute(
-            select(func.min(extract("year", Incident.incident_date))).where(_ATTACK_FILTER)
+            select(func.min(extract("year", Incident.incident_date))).where(_PUBLIC_ATTACK_FILTER)
         )).scalar_one()
 
         max_year = (await self.db.execute(
-            select(func.max(extract("year", Incident.incident_date))).where(_ATTACK_FILTER)
+            select(func.max(extract("year", Incident.incident_date))).where(_PUBLIC_ATTACK_FILTER)
         )).scalar_one()
 
         year_range = None
@@ -84,7 +96,7 @@ class StatsService:
                 func.count().label("count"),
                 func.sum(case((Incident.fatal.is_(True), 1), else_=0)).label("fatal"),
             )
-            .where(_ATTACK_FILTER, Incident.incident_date.is_not(None))
+            .where(_PUBLIC_ATTACK_FILTER, Incident.incident_date.is_not(None))
             .group_by("year")
             .order_by("year")
         )
@@ -103,7 +115,7 @@ class StatsService:
                 func.count().label("count"),
                 func.sum(case((Incident.fatal.is_(True), 1), else_=0)).label("fatal"),
             )
-            .where(_ATTACK_FILTER)
+            .where(_PUBLIC_ATTACK_FILTER)
             .group_by(Incident.country)
             .order_by(func.count().desc())
             .limit(20)
@@ -123,7 +135,7 @@ class StatsService:
                 species_label.label("species"),
                 func.count().label("count"),
             )
-            .where(_ATTACK_FILTER, species_label.is_not(None))
+            .where(_PUBLIC_ATTACK_FILTER, species_label.is_not(None))
             .group_by(species_label)
             .order_by(func.count().desc())
             .limit(15)
@@ -139,7 +151,7 @@ class StatsService:
                 Incident.victim_activity.label("activity"),
                 func.count().label("count"),
             )
-            .where(_ATTACK_FILTER, Incident.victim_activity.is_not(None))
+            .where(_PUBLIC_ATTACK_FILTER, Incident.victim_activity.is_not(None))
             .group_by(Incident.victim_activity)
             .order_by(func.count().desc())
             .limit(15)
@@ -156,7 +168,7 @@ class StatsService:
                 func.sum(case((Incident.fatal.is_(True), 1), else_=0)).label("fatal"),
                 func.sum(case((Incident.fatal.is_(False), 1), else_=0)).label("non_fatal"),
             )
-            .where(_ATTACK_FILTER, Incident.incident_date.is_not(None))
+            .where(_PUBLIC_ATTACK_FILTER, Incident.incident_date.is_not(None))
             .group_by("year")
             .order_by("year")
         )

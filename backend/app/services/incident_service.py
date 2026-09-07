@@ -21,7 +21,7 @@ from app.schemas.incident import (
 )
 from app.services.dedup_service import attach_sources_to_incident, find_duplicate_incident
 from app.utils.case_number import generate_case_number
-from app.utils.geo import point_from_coords
+from app.utils.geo import point_from_coords, round_coord
 
 ALLOWED_SORT_FIELDS = {
     "incident_date", "case_number", "country", "classification",
@@ -72,13 +72,9 @@ def _incident_to_response(incident: Incident) -> dict:
 
 def _incident_to_public_response(data: dict) -> PublicIncidentResponse:
     """Apply the public disclosure boundary to a fully populated record."""
-    precision = 2 if data["location_precision"] != "exact" else 3
-    longitude = data.get("longitude")
-    latitude = data.get("latitude")
-    if longitude is not None:
-        longitude = round(longitude, precision)
-    if latitude is not None:
-        latitude = round(latitude, precision)
+    precision = data["location_precision"]
+    longitude = round_coord(data.get("longitude"), precision)
+    latitude = round_coord(data.get("latitude"), precision)
 
     return PublicIncidentResponse(
         **{

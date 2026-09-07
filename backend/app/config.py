@@ -1,4 +1,14 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+# HS256 signs every JWT with this value, so a guessable one lets anyone forge a
+# token with "role": "admin". Compose's ${SECRET_KEY:?...} only catches unset or
+# empty — it happily accepts the placeholder shipped in .env.example.
+MIN_SECRET_KEY_LENGTH = 32
+
+# Placeholders from .env.example and deploy/.env.example. An operator who copies
+# the template and forgets to substitute must not get a running, signable app.
+_REJECTED_SECRET_PREFIXES = ("changeme", "change-me", "your-secret", "replace-me")
 
 
 class Settings(BaseSettings):
@@ -40,6 +50,27 @@ class Settings(BaseSettings):
             f"postgresql://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
+
+    @field_validator("secret_key")
+    @classmethod
+    def _reject_weak_secret_key(cls, value: str) -> str:
+        """Refuse to start on a short or placeholder signing key.
+
+        Failing at import is deliberate: a weak key produces an app that looks
+        healthy while every token it issues is forgeable, which is far worse
+        than a container that will not boot.
+        """
+        if len(value) < MIN_SECRET_KEY_LENGTH:
+            raise ValueError(
+                f"SECRET_KEY must be at least {MIN_SECRET_KEY_LENGTH} characters "
+                f"(got {len(value)}). Generate one with: openssl rand -hex 32"
+            )
+        if value.strip().lower().startswith(_REJECTED_SECRET_PREFIXES):
+            raise ValueError(
+                "SECRET_KEY is still the example placeholder. Generate a real "
+                "one with: openssl rand -hex 32"
+            )
+        return value
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -179,3 +179,67 @@ async def test_clusters_with_data(client: AsyncClient, db):
     assert len(data) >= 1
     total_count = sum(c["count"] for c in data)
     assert total_count == 3
+
+
+@pytest.mark.asyncio
+async def test_geojson_honors_location_precision(client: AsyncClient, db):
+    """An approximate incident must not be mapped as finely as an exact one.
+
+    The list/detail endpoints already coarsen approximate coordinates. The map
+    is the surface people actually browse, so publishing full precision there
+    would defeat the downgrade everywhere else.
+    """
+    db.add_all([
+        Incident(
+            case_number="OSAF-2025-0500",
+            location_description="Exact Beach",
+            country="United States",
+            classification="unprovoked",
+            verification_status="verified",
+            location_precision="exact",
+            coordinates=point_from_coords(-80.123456, 28.987654),
+        ),
+        Incident(
+            case_number="OSAF-2025-0501",
+            location_description="Approximate Beach",
+            country="United States",
+            classification="unprovoked",
+            verification_status="verified",
+            location_precision="approximate",
+            coordinates=point_from_coords(-80.123456, 28.987654),
+        ),
+    ])
+    await db.commit()
+
+    response = await client.get("/api/v1/incidents/map")
+    assert response.status_code == 200
+    by_case = {
+        f["properties"]["case_number"]: f["geometry"]["coordinates"]
+        for f in response.json()["features"]
+    }
+
+    assert by_case["OSAF-2025-0500"] == [-80.123, 28.988]
+    assert by_case["OSAF-2025-0501"] == [-80.12, 28.99]
+
+
+@pytest.mark.asyncio
+async def test_clusters_round_centroids(client: AsyncClient, db):
+    """A single-incident cluster must not echo back that incident's raw point."""
+    db.add(Incident(
+        case_number="OSAF-2025-0502",
+        location_description="Lone Beach",
+        country="United States",
+        classification="unprovoked",
+        verification_status="verified",
+        location_precision="exact",
+        coordinates=point_from_coords(-80.123456, 28.987654),
+    ))
+    await db.commit()
+
+    response = await client.get("/api/v1/incidents/map/clusters?zoom=3")
+    assert response.status_code == 200
+    clusters = response.json()["data"]
+    assert len(clusters) == 1
+    assert clusters[0]["count"] == 1
+    assert clusters[0]["longitude"] == -80.12
+    assert clusters[0]["latitude"] == 28.99

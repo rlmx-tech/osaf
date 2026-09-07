@@ -23,6 +23,7 @@ async def test_overview_with_data(client: AsyncClient, db):
     incidents = [
         Incident(
             case_number="OSAF-2025-0070",
+            verification_status="verified",
             location_description="Beach A",
             country="United States",
             classification="unprovoked",
@@ -32,6 +33,7 @@ async def test_overview_with_data(client: AsyncClient, db):
         ),
         Incident(
             case_number="OSAF-2025-0071",
+            verification_status="verified",
             location_description="Beach B",
             country="Australia",
             classification="unprovoked",
@@ -40,6 +42,7 @@ async def test_overview_with_data(client: AsyncClient, db):
         ),
         Incident(
             case_number="OSAF-2025-0072",
+            verification_status="verified",
             location_description="Beach C",
             country="United States",
             classification="provoked",
@@ -65,6 +68,7 @@ async def test_by_year(client: AsyncClient, db):
     db.add_all([
         Incident(
             case_number="OSAF-2024-0080",
+            verification_status="verified",
             location_description="Beach",
             country="USA",
             classification="unprovoked",
@@ -73,6 +77,7 @@ async def test_by_year(client: AsyncClient, db):
         ),
         Incident(
             case_number="OSAF-2025-0081",
+            verification_status="verified",
             location_description="Beach",
             country="USA",
             classification="unprovoked",
@@ -96,6 +101,7 @@ async def test_by_country(client: AsyncClient, db):
     for i in range(3):
         db.add(Incident(
             case_number=f"OSAF-2025-009{i}",
+            verification_status="verified",
             location_description="Beach",
             country="Australia",
             classification="unprovoked",
@@ -103,6 +109,7 @@ async def test_by_country(client: AsyncClient, db):
         ))
     db.add(Incident(
         case_number="OSAF-2025-0093",
+        verification_status="verified",
         location_description="Beach",
         country="South Africa",
         classification="unprovoked",
@@ -122,6 +129,7 @@ async def test_by_species(client: AsyncClient, db):
     db.add_all([
         Incident(
             case_number="OSAF-2025-0100",
+            verification_status="verified",
             location_description="Beach",
             country="USA",
             classification="unprovoked",
@@ -129,6 +137,7 @@ async def test_by_species(client: AsyncClient, db):
         ),
         Incident(
             case_number="OSAF-2025-0101",
+            verification_status="verified",
             location_description="Beach",
             country="USA",
             classification="unprovoked",
@@ -136,6 +145,7 @@ async def test_by_species(client: AsyncClient, db):
         ),
         Incident(
             case_number="OSAF-2025-0102",
+            verification_status="verified",
             location_description="Beach",
             country="USA",
             classification="unprovoked",
@@ -156,6 +166,7 @@ async def test_by_activity(client: AsyncClient, db):
     db.add_all([
         Incident(
             case_number="OSAF-2025-0110",
+            verification_status="verified",
             location_description="Beach",
             country="USA",
             classification="unprovoked",
@@ -163,6 +174,7 @@ async def test_by_activity(client: AsyncClient, db):
         ),
         Incident(
             case_number="OSAF-2025-0111",
+            verification_status="verified",
             location_description="Beach",
             country="USA",
             classification="unprovoked",
@@ -170,6 +182,7 @@ async def test_by_activity(client: AsyncClient, db):
         ),
         Incident(
             case_number="OSAF-2025-0112",
+            verification_status="verified",
             location_description="Beach",
             country="USA",
             classification="unprovoked",
@@ -190,6 +203,7 @@ async def test_fatality_trends(client: AsyncClient, db):
     db.add_all([
         Incident(
             case_number="OSAF-2025-0120",
+            verification_status="verified",
             location_description="Beach",
             country="USA",
             classification="unprovoked",
@@ -198,6 +212,7 @@ async def test_fatality_trends(client: AsyncClient, db):
         ),
         Incident(
             case_number="OSAF-2025-0121",
+            verification_status="verified",
             location_description="Beach",
             country="USA",
             classification="unprovoked",
@@ -282,3 +297,100 @@ async def test_breakdowns_exclude_non_attacks(db):
     assert activities == {"surfing"}
     species = {r["species"] for r in (await svc.by_species())["data"]}
     assert "Galeocerdo cuvier" not in species     # only sightings had tiger shark
+
+
+async def _seed_verification_mix(db):
+    """One verified attack alongside a pending, a rejected, and a needs_review one.
+
+    All four are attack-classification and fatal, so anything that reaches the
+    aggregates shows up in both total_incidents and total_fatal.
+    """
+    db.add_all([
+        Incident(
+            case_number="OSAF-2025-0400",
+            location_description="Verified Beach",
+            country="United States",
+            classification="unprovoked",
+            incident_date=date(2025, 5, 1),
+            victim_activity="surfing",
+            shark_species_confirmed="Carcharodon carcharias",
+            fatal=True,
+            verification_status="verified",
+        ),
+        Incident(
+            case_number="OSAF-2025-0401",
+            location_description="Pending Beach",
+            country="Hoaxland",
+            classification="unprovoked",
+            incident_date=date(2025, 5, 2),
+            victim_activity="swimming",
+            shark_species_confirmed="Galeocerdo cuvier",
+            fatal=True,
+            verification_status="pending",
+        ),
+        Incident(
+            case_number="OSAF-2025-0402",
+            location_description="Rejected Beach",
+            country="Hoaxland",
+            classification="unprovoked",
+            incident_date=date(2025, 5, 3),
+            victim_activity="swimming",
+            shark_species_confirmed="Galeocerdo cuvier",
+            fatal=True,
+            verification_status="rejected",
+        ),
+        Incident(
+            case_number="OSAF-2025-0403",
+            location_description="Needs Review Beach",
+            country="Hoaxland",
+            classification="unprovoked",
+            incident_date=date(2025, 5, 4),
+            victim_activity="swimming",
+            shark_species_confirmed="Galeocerdo cuvier",
+            fatal=True,
+            verification_status="needs_review",
+        ),
+    ])
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_overview_counts_verified_only(db):
+    """Public stats must not count unverified submissions.
+
+    Registration is open and any authenticated user can submit, so an
+    unfiltered aggregate lets anyone move the public headline numbers. A
+    rejected incident — one an admin ruled a hoax — must not count either.
+    """
+    from app.services.stats_service import StatsService
+
+    await _seed_verification_mix(db)
+    ov = (await StatsService(db).overview())["data"]
+
+    assert ov["total_incidents"] == 1
+    assert ov["total_fatal"] == 1
+    assert ov["most_active_country"] == "United States"
+    assert ov["most_common_species"] == "Carcharodon carcharias"
+
+
+@pytest.mark.asyncio
+async def test_breakdowns_exclude_unverified(db):
+    """Every breakdown carries the same verified-only filter as overview."""
+    from app.services.stats_service import StatsService
+
+    await _seed_verification_mix(db)
+    svc = StatsService(db)
+
+    assert sum(r["count"] for r in (await svc.by_year())["data"]) == 1
+
+    countries = {r["country"] for r in (await svc.by_country())["data"]}
+    assert "Hoaxland" not in countries
+
+    assert {r["species"] for r in (await svc.by_species())["data"]} == {
+        "Carcharodon carcharias"
+    }
+    assert {r["activity"] for r in (await svc.by_activity())["data"]} == {"surfing"}
+
+    trends = (await svc.fatality_trends())["data"]
+    assert sum(r["fatal"] for r in trends) == 1
+    assert sum(r["non_fatal"] for r in trends) == 0

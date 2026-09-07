@@ -1,6 +1,19 @@
 """Collector service configuration."""
 
+from urllib.parse import urlparse
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+# A local Ollama needs no bearer token; Ollama Cloud rejects every request
+# without one. Hosts treated as local for that purpose:
+_LOCAL_OLLAMA_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "ollama", "host.docker.internal"})
+
+
+def requires_ollama_api_key(ollama_url: str) -> bool:
+    """True when the configured Ollama endpoint is remote and so needs auth."""
+    host = (urlparse(ollama_url).hostname or "").lower()
+    return host not in _LOCAL_OLLAMA_HOSTS
 
 
 class Settings(BaseSettings):
@@ -32,6 +45,23 @@ class Settings(BaseSettings):
     state_file: str = "/app/data/collector_state.json"
 
     model_config = {"env_prefix": "COLLECTOR_"}
+
+    @model_validator(mode="after")
+    def _require_api_key_for_remote_ollama(self) -> "Settings":
+        """Fail startup when a remote Ollama is configured with no bearer token.
+
+        Without this the collector starts cleanly, every extraction call gets a
+        401, _call_ollama logs and returns None, and the service reports healthy
+        while collecting nothing. A container that refuses to boot is far easier
+        to notice than one that silently stops producing incidents.
+        """
+        if requires_ollama_api_key(self.ollama_url) and not self.ollama_api_key.strip():
+            raise ValueError(
+                f"COLLECTOR_OLLAMA_API_KEY is required for remote Ollama at "
+                f"{self.ollama_url!r}. Set it, or point COLLECTOR_OLLAMA_URL at a "
+                f"local instance."
+            )
+        return self
 
 
 settings = Settings()

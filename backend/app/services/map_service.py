@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 from geoalchemy2.functions import ST_AsGeoJSON, ST_MakeEnvelope, ST_SnapToGrid, ST_Centroid, ST_Collect, ST_X, ST_Y
@@ -5,6 +6,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.incident import Incident
+from app.utils.geo import COARSE_DECIMALS, round_coord
 
 
 def _parse_bbox(bbox: str) -> tuple[float, float, float, float]:
@@ -82,6 +84,7 @@ class MapService:
             Incident.fatal,
             Incident.location_description,
             Incident.country,
+            Incident.location_precision,
             ST_AsGeoJSON(Incident.coordinates).label("geojson"),
         )
 
@@ -106,10 +109,14 @@ class MapService:
 
         features = []
         for row in rows:
-            import json
             geometry = json.loads(row.geojson)
-            # Public map points are approximate, not household-level coordinates.
-            geometry["coordinates"] = [round(value, 3) for value in geometry["coordinates"]]
+            # Public map points are approximate, not household-level coordinates,
+            # and an incident marked approximate/region is coarser still. Same
+            # rule as the list/detail endpoints — see utils.geo.round_coord.
+            geometry["coordinates"] = [
+                round_coord(value, row.location_precision)
+                for value in geometry["coordinates"]
+            ]
             features.append({
                 "type": "Feature",
                 "geometry": geometry,
@@ -175,9 +182,13 @@ class MapService:
 
         clusters = []
         for row in rows:
+            # A cluster centroid is always coarse: it is a drawing position, not
+            # a location. Rounding matters most when a grid cell holds a single
+            # incident, where an unrounded centroid is that incident's exact
+            # coordinate regardless of its location_precision.
             clusters.append({
-                "longitude": row.lon,
-                "latitude": row.lat,
+                "longitude": round(row.lon, COARSE_DECIMALS) if row.lon is not None else None,
+                "latitude": round(row.lat, COARSE_DECIMALS) if row.lat is not None else None,
                 "count": row.count,
                 "fatal_count": row.fatal_count,
                 "dominant_classification": row.dominant_classification,
