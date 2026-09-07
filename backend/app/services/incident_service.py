@@ -9,8 +9,10 @@ from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.audit import IncidentAuditLog
 from app.models.incident import Incident
 from app.models.source import IncidentSource
+from app.models.user import User
 from app.schemas.incident import (
     IncidentCreate,
     IncidentResponse,
@@ -68,6 +70,18 @@ def _incident_to_response(incident: Incident) -> dict:
         "sources": incident.sources,
     }
     return data
+
+
+def _audit_value(value):
+    """Coerce a field value into something JSONB can store.
+
+    changes is a JSONB column, so dates, times and UUIDs have to be rendered
+    before they go in — otherwise the audit write raises and takes the update
+    down with it.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
 
 
 def _incident_to_public_response(data: dict) -> PublicIncidentResponse:
@@ -270,10 +284,19 @@ class IncidentService:
 
         return _incident_to_public_response(data)
 
-    async def create_incident(self, data: IncidentCreate) -> IncidentResponse:
+    async def create_incident(
+        self, data: IncidentCreate, user: User | None = None
+    ) -> IncidentResponse:
         existing = await find_duplicate_incident(self.db, data)
         if existing is not None:
             await attach_sources_to_incident(self.db, existing, data.sources)
+            self.db.add(IncidentAuditLog(
+                incident_id=existing.id,
+                action="updated",
+                changed_by=user.id if user else None,
+                notes="sources attached to existing incident by deduplication",
+            ))
+            await self.db.commit()
             return await self.get_incident(existing.id)
 
         case_number = await generate_case_number(self.db)
@@ -326,13 +349,22 @@ class IncidentService:
             incident.sources.append(source)
 
         self.db.add(incident)
+        await self.db.flush()
+
+        self.db.add(IncidentAuditLog(
+            incident_id=incident.id,
+            action="created",
+            changed_by=user.id if user else None,
+            notes="direct create",
+        ))
+
         await self.db.commit()
         await self.db.refresh(incident, attribute_names=["sources"])
 
         return await self.get_incident(incident.id)
 
     async def update_incident(
-        self, incident_id: UUID, data: IncidentUpdate
+        self, incident_id: UUID, data: IncidentUpdate, user: User | None = None
     ) -> IncidentResponse:
         result = await self.db.execute(
             select(Incident).where(Incident.id == incident_id)
@@ -352,8 +384,24 @@ class IncidentService:
                 else None
             )
 
+        # Capture the diff before mutating: "this record changed" is much less
+        # useful after the fact than "this field went from X to Y".
+        changes: dict[str, dict] = {}
         for field, value in update_data.items():
+            before = getattr(incident, field, None)
+            if before == value:
+                continue
+            changes[field] = {"from": _audit_value(before), "to": _audit_value(value)}
             setattr(incident, field, value)
+
+        if changes:
+            self.db.add(IncidentAuditLog(
+                incident_id=incident.id,
+                action="updated",
+                changed_by=user.id if user else None,
+                changes=changes,
+                notes="direct update",
+            ))
 
         await self.db.commit()
         return await self.get_incident(incident_id)

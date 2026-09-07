@@ -59,6 +59,7 @@ class TestUpdateIncidentSuccess:
         """Covers update_incident body: model_dump, setattr loop, commit, get_incident."""
         incident = _make_valid_incident()
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(incident),   # update_incident SELECT
             _scalar_result(incident),   # get_incident SELECT (for response)
@@ -76,6 +77,7 @@ class TestUpdateIncidentSuccess:
         """Verifies setattr is called for updated fields."""
         incident = _make_valid_incident()
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(incident),
             _scalar_result(incident),
@@ -92,6 +94,7 @@ class TestUpdateIncidentSuccess:
     async def test_empty_update_still_commits(self):
         incident = _make_valid_incident()
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(incident),
             _scalar_result(incident),
@@ -105,6 +108,7 @@ class TestUpdateIncidentSuccess:
     async def test_explicit_null_clears_coordinates(self):
         incident = _make_valid_incident(coordinates=object())
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(incident),
             _scalar_result(incident),

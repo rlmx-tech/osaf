@@ -23,6 +23,19 @@ _ARCHIVE_PATH = re.compile(
 )
 
 
+def _landed_on_allowed_host(response: httpx.Response) -> bool:
+    """True when a response finished on an allowlisted host.
+
+    _normalize_href only vets the URL we ask for. The client follows redirects,
+    and httpx does not re-check the host on each hop, so a compromised or
+    misconfigured upstream could bounce the collector somewhere else — the LAN,
+    a metadata endpoint — and we would parse whatever came back. Checking the
+    final URL closes that without giving up redirect support, which the site
+    needs for its www-to-bare-domain hop.
+    """
+    return (response.url.host or "").lower() in _TRACKER_HOSTS
+
+
 def _normalize_href(href: str) -> str | None:
     """Return an absolute trackingsharks.com URL, or None for off-site/malformed links."""
     if not href:
@@ -72,6 +85,11 @@ class TrackerPoller(BasePoller):
 
         try:
             resp = await self._client.get(TRACKING_SHARKS_URL)
+            if not _landed_on_allowed_host(resp):
+                logger.warning(
+                    "tracker: index redirected off-allowlist to %s — discarding", resp.url
+                )
+                return []
             resp.raise_for_status()
         except httpx.HTTPError:
             logger.warning("tracker: failed to fetch %s", TRACKING_SHARKS_URL)
@@ -105,6 +123,12 @@ class TrackerPoller(BasePoller):
             # Fetch the article page for full content
             try:
                 article_resp = await self._client.get(href)
+                if not _landed_on_allowed_host(article_resp):
+                    logger.warning(
+                        "tracker: article redirected off-allowlist to %s — skipping",
+                        article_resp.url,
+                    )
+                    continue
                 article_resp.raise_for_status()
                 article_soup = BeautifulSoup(article_resp.text, "lxml")
             except httpx.HTTPError:

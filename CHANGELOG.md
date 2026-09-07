@@ -5,7 +5,88 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Security
+
+- **Public statistics counted unverified and rejected incidents.** Every
+  `StatsService` aggregate filtered on classification alone, while
+  `list_incidents` and the map service both carry a verified-only filter.
+  Registration is open and any authenticated user can submit, so a pending
+  submission moved `total_incidents`, `fatality_rate`, `most_active_country`,
+  the species donut, and every trend line the moment it was created — and an
+  incident an admin had rejected as a hoax kept counting forever. Now one
+  combined `_PUBLIC_ATTACK_FILTER`, so a query added later cannot pick up the
+  classification filter and miss the verification one.
+
+- **Map endpoints ignored `location_precision`.** `get_geojson` rounded every
+  point to 3 decimals (~110 m) regardless, and `get_clusters` published raw
+  centroids unrounded, so a grid cell holding one incident echoed that
+  incident's exact coordinate. Incidents marked approximate or region are
+  marked that way deliberately. The rule now lives once in
+  `utils.geo.round_coord`, shared by list, detail, GeoJSON, and clusters.
+
+- **Direct incident writes left no audit trail.** `POST /incidents` and
+  `PUT /incidents/{id}` are reachable by any admin or verified contributor and
+  wrote nothing to `incident_audit_log`, so `/admin/audit-log` showed nothing
+  for them. Both now log, attributed to the authenticated user, with updates
+  recording a per-field `{from, to}` diff and no entry at all for a no-op.
+  Note: `DELETE /incidents/{id}` still leaves no trace, because
+  `incident_audit_log.incident_id` cascades on delete — see Known issues.
+
+- **`SECRET_KEY` had no strength validation.** Compose's `${SECRET_KEY:?...}`
+  only rejects unset or empty, so the `.env.example` placeholder would boot a
+  healthy-looking app signing every HS256 token with a guessable value.
+  Startup now refuses keys under 32 characters or matching known placeholders.
+
+- **`users.role` had no database CHECK constraint**, unlike every enum-like
+  column on `incidents` — the column deciding who can publish and delete
+  relied entirely on API-layer allowlists. Migration `a1b2c3d4e5f6` normalizes
+  any out-of-range role to `public` (the least-privileged value) and adds the
+  constraint.
+
+- **Collector followed redirects without re-checking the host.** The tracker
+  poller validated the initial URL against an allowlist, but `httpx` does not
+  re-validate on redirect, so a compromised upstream could bounce the fetch to
+  a LAN or metadata address. The final resolved host is now checked.
+
+- **`collector/submitter.py` removed.** Unreferenced, and predating the
+  evidence-ingestion rework — if rewired to the verified-contributor account
+  the deploy docs describe, it would have auto-published LLM output with no
+  review gate.
+
+- **Frontend dependencies.** `react-router-dom` 6.30.4 → 6.30.6 and `postcss`
+  8.5.18 → 8.5.28 clear 3 of 5 npm advisories, including both HIGH severity
+  (nanoid, browserslist).
+
 ### Fixed
+
+- **Collector dropped incidents on non-object LLM output.** The collector's
+  `_parse_json_response` lacked the `isinstance(dict)` guard its backend twin
+  has, so valid JSON that is not an object — an array, a bare string, a number
+  — reached callers that call `.get()` and raised `AttributeError`. Contained
+  by the pipeline's broad except, so the effect was silent data loss.
+
+- **`OLLAMA_API_KEY` was optional against a remote endpoint.** Empty meant no
+  auth header, a 401 on every call, and a collector reporting healthy while
+  collecting nothing. Now required when the Ollama URL is remote; still
+  optional for a local instance.
+
+### Known issues
+
+- **`DELETE /incidents/{id}` cannot be audited as things stand.**
+  `incident_audit_log.incident_id` is `ON DELETE CASCADE` and the ORM
+  relationship uses `cascade="all, delete-orphan"`, so any audit row written
+  for a deletion is destroyed along with the incident it describes. Fixing it
+  needs a decision: soft-delete incidents, or make `incident_id` nullable with
+  `ON DELETE SET NULL` so the trail outlives the record. Both change data
+  semantics, so neither was chosen unilaterally.
+
+- **The deployed extraction model contradicts the code's stated rationale.**
+  `collector/extractor.py` documents that a general instruction-following
+  model is used "not a code model, because the task is structured extraction
+  from prose" and `collector/config.py` defaults to `glm-5.2:cloud`
+  accordingly — but `docker-compose.yml` and both `.env.example` files set
+  `COLLECTOR_OLLAMA_MODEL=qwen3-coder:480b`, and compose wins. Whichever is
+  right, the two should agree.
 
 - **The backend test suite is runnable again, and can no longer drop a real
   database.** 142 of its 306 tests errored with `ConnectionRefusedError`

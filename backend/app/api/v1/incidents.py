@@ -71,7 +71,7 @@ async def create_incident(
     db: AsyncSession = Depends(get_db),
 ):
     service = IncidentService(db)
-    return await service.create_incident(data)
+    return await service.create_incident(data, user)
 
 
 @router.put("/{incident_id}", response_model=IncidentResponse)
@@ -82,7 +82,7 @@ async def update_incident(
     db: AsyncSession = Depends(get_db),
 ):
     service = IncidentService(db)
-    return await service.update_incident(incident_id, data)
+    return await service.update_incident(incident_id, data, user)
 
 
 @router.delete("/{incident_id}", status_code=204)

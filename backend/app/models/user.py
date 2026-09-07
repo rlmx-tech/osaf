@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -37,5 +37,12 @@ class User(Base):
     )
 
     __table_args__ = (
+        # The incidents table constrains its enum-like columns at the database
+        # level; users.role — the column that decides who can publish and who
+        # can delete — was relying entirely on API-layer allowlists.
+        CheckConstraint(
+            "role IN ('admin', 'verified_contributor', 'public')",
+            name="valid_role",
+        ),
         {"comment": "Users and contributors"},
     )
