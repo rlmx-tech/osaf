@@ -1,11 +1,15 @@
 """Ollama-powered extraction and verification pipeline.
 
-Uses glm-5.2:cloud on Ollama Cloud (configurable via COLLECTOR_OLLAMA_MODEL) to:
+Uses glm-5.3-flash:cloud on Ollama Cloud (configurable via
+COLLECTOR_OLLAMA_MODEL) to:
 1. Extract structured incident data from raw text
 2. Verify extracted data for consistency and accuracy
 
 A general instruction-following model is used (not a code model) because the
 task is structured extraction from prose news/social text, not code generation.
+The deployment config must agree with this: it previously defaulted to
+qwen3-coder:480b, which contradicted this note and was retired upstream on
+2026-07-15, so every extraction call had been returning HTTP 410.
 """
 
 import json
@@ -255,10 +259,13 @@ async def _call_ollama(prompt: str) -> str | None:
                     "model": settings.ollama_model,
                     "prompt": prompt,
                     "stream": False,
-                    # Disable reasoning output: glm-5.2 and other thinking-capable
-                    # models would otherwise spend the num_predict budget on
-                    # <think> blocks and risk truncating/contaminating the JSON.
-                    "think": False,
+                    # "think" is deliberately NOT sent. It used to be False, which
+                    # was right for glm-5.2 but backfires on glm-5.3: measured
+                    # against this prompt, think=False made the model emit its
+                    # reasoning as ordinary prose ahead of the JSON (~8000 chars,
+                    # and glm-5.3:cloud became unparseable), while omitting the key
+                    # returned bare JSON in ~700 chars. think=True also parses but
+                    # runs about 3x slower for no gain.
                     "options": {
                         "temperature": 0.1,
                         "num_predict": 2048,
@@ -270,6 +277,50 @@ async def _call_ollama(prompt: str) -> str | None:
         except httpx.HTTPError:
             logger.exception("ollama: request failed")
             return None
+
+
+# HTTP statuses that mean the configured model will never work, however long we
+# wait: retired upstream, unknown tag, or credentials that cannot reach it.
+_FATAL_MODEL_STATUSES = frozenset({401, 403, 404, 410})
+
+
+async def check_model_available() -> tuple[bool, str]:
+    """Preflight the configured model. Returns (usable, human-readable reason).
+
+    Worth doing at startup because the failure this catches is silent by
+    construction. qwen3-coder:480b was retired on 2026-07-15 and began
+    returning HTTP 410; _call_ollama caught the error, logged at exception
+    level, and returned None, so the pipeline simply dropped every item while
+    the container stayed healthy and the news feed kept filling from the
+    non-LLM capture path. That went unnoticed for about seven weeks. One cheap
+    call at boot turns it into something you find out about immediately.
+    """
+    headers: dict[str, str] = {}
+    if settings.ollama_api_key:
+        headers["Authorization"] = f"Bearer {settings.ollama_api_key}"
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{settings.ollama_url}/api/generate",
+                headers=headers,
+                json={
+                    "model": settings.ollama_model,
+                    "prompt": "Reply with the single word OK.",
+                    "stream": False,
+                    "options": {"temperature": 0, "num_predict": 8},
+                },
+            )
+    except httpx.HTTPError as exc:
+        # A blip at boot should not keep the collector down; the pollers retry.
+        return True, f"could not be reached ({exc!r}) — continuing anyway"
+
+    if resp.status_code in _FATAL_MODEL_STATUSES:
+        detail = resp.text.strip()[:200]
+        return False, f"HTTP {resp.status_code}: {detail}"
+    if resp.status_code >= 400:
+        return True, f"unexpected HTTP {resp.status_code} — continuing anyway"
+    return True, "ok"
 
 
 def _sanitize_for_prompt(text: str) -> str:

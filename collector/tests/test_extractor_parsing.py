@@ -79,3 +79,103 @@ class TestRequiresOllamaApiKey:
     )
     def test_local_endpoints_do_not(self, url):
         assert requires_ollama_api_key(url) is False
+
+
+class TestOllamaRequestShape:
+    """The request body must not carry "think".
+
+    Measured against glm-5.3-flash and glm-5.3: sending think=False makes the
+    model write its reasoning out as prose ahead of the JSON (~8000 chars, and
+    glm-5.3:cloud became unparseable), while omitting the key returns bare JSON
+    in ~700 chars. This guards against someone reinstating it from the old
+    glm-5.2 comment.
+    """
+
+    @pytest.mark.asyncio
+    async def test_think_is_not_sent(self, monkeypatch):
+        from collector import extractor
+
+        captured = {}
+
+        class _Resp:
+            status_code = 200
+
+            def raise_for_status(self): ...
+
+            def json(self): return {"response": '{"is_relevant": false}'}
+
+        class _Client:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+            async def post(self, url, headers=None, json=None):
+                captured.update(json)
+                return _Resp()
+
+        monkeypatch.setattr(extractor.httpx, "AsyncClient", lambda **kw: _Client())
+        await extractor._call_ollama("hello")
+
+        assert "think" not in captured
+        assert captured["stream"] is False
+        assert captured["options"]["temperature"] == 0.1
+
+
+class TestCheckModelAvailable:
+    """A retired or unknown model must stop startup, not degrade silently."""
+
+    @staticmethod
+    def _patch(monkeypatch, *, status=None, raises=None, body=""):
+        from collector import extractor
+
+        class _Resp:
+            status_code = status
+            text = body
+
+        class _Client:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+            async def post(self, *a, **kw):
+                if raises is not None:
+                    raise raises
+                return _Resp()
+
+        monkeypatch.setattr(extractor.httpx, "AsyncClient", lambda **kw: _Client())
+        return extractor
+
+    @pytest.mark.parametrize("status", [401, 403, 404, 410])
+    @pytest.mark.asyncio
+    async def test_fatal_statuses_report_unusable(self, monkeypatch, status):
+        ex = self._patch(monkeypatch, status=status, body="model was retired")
+        usable, reason = await ex.check_model_available()
+        assert usable is False
+        assert str(status) in reason
+
+    @pytest.mark.asyncio
+    async def test_the_real_qwen_retirement_shape_is_caught(self, monkeypatch):
+        """410 + retirement notice is exactly what broke production."""
+        ex = self._patch(
+            monkeypatch, status=410,
+            body="qwen3-coder:480b was retired at 2026-07-15 00:00:00 -0700 PDT",
+        )
+        usable, reason = await ex.check_model_available()
+        assert usable is False
+        assert "retired" in reason
+
+    @pytest.mark.asyncio
+    async def test_success_is_usable(self, monkeypatch):
+        ex = self._patch(monkeypatch, status=200)
+        assert await ex.check_model_available() == (True, "ok")
+
+    @pytest.mark.asyncio
+    async def test_network_blip_does_not_block_startup(self, monkeypatch):
+        import httpx as _httpx
+        ex = self._patch(monkeypatch, raises=_httpx.ConnectError("boom"))
+        usable, reason = await ex.check_model_available()
+        assert usable is True
+        assert "continuing anyway" in reason
+
+    @pytest.mark.asyncio
+    async def test_transient_server_error_does_not_block_startup(self, monkeypatch):
+        ex = self._patch(monkeypatch, status=503, body="upstream busy")
+        usable, reason = await ex.check_model_available()
+        assert usable is True
+        assert "continuing anyway" in reason

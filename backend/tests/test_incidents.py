@@ -1,5 +1,7 @@
 """Tests for incident CRUD endpoints."""
 
+from datetime import date
+
 import pytest
 from httpx import AsyncClient
 
@@ -417,3 +419,79 @@ async def test_delete_incident_not_found(client: AsyncClient, admin_user: User):
         headers=auth_header(admin_user),
     )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_undated_incidents_sort_last_not_first(client: AsyncClient, db):
+    """A record with no date must not lead the public list.
+
+    Postgres puts NULLs first on a DESC sort, so the default
+    ?sort=incident_date&order=desc surfaced the least complete records — no
+    date, often no coordinates — at the top of the page everyone lands on.
+    """
+    db.add_all([
+        Incident(
+            case_number="OSAF-2025-0600", location_description="Undated Beach",
+            country="United States", classification="unprovoked",
+            verification_status="verified", incident_date=None,
+        ),
+        Incident(
+            case_number="OSAF-2025-0601", location_description="Recent Beach",
+            country="United States", classification="unprovoked",
+            verification_status="verified", incident_date=date(2025, 6, 1),
+        ),
+        Incident(
+            case_number="OSAF-2025-0602", location_description="Older Beach",
+            country="United States", classification="unprovoked",
+            verification_status="verified", incident_date=date(2024, 6, 1),
+        ),
+    ])
+    await db.commit()
+
+    response = await client.get("/api/v1/incidents?sort=incident_date&order=desc")
+    assert response.status_code == 200
+    cases = [i["case_number"] for i in response.json()["data"]]
+    assert cases == ["OSAF-2025-0601", "OSAF-2025-0602", "OSAF-2025-0600"]
+
+
+@pytest.mark.asyncio
+async def test_undated_incidents_sort_last_ascending_too(client: AsyncClient, db):
+    db.add_all([
+        Incident(
+            case_number="OSAF-2025-0610", location_description="Undated Beach",
+            country="United States", classification="unprovoked",
+            verification_status="verified", incident_date=None,
+        ),
+        Incident(
+            case_number="OSAF-2025-0611", location_description="Dated Beach",
+            country="United States", classification="unprovoked",
+            verification_status="verified", incident_date=date(2025, 6, 1),
+        ),
+    ])
+    await db.commit()
+
+    response = await client.get("/api/v1/incidents?sort=incident_date&order=asc")
+    cases = [i["case_number"] for i in response.json()["data"]]
+    assert cases == ["OSAF-2025-0611", "OSAF-2025-0610"]
+
+
+@pytest.mark.asyncio
+async def test_pagination_is_deterministic_for_tied_sort_values(client: AsyncClient, db):
+    """Ties need a stable tiebreaker or paging can repeat or skip records."""
+    db.add_all([
+        Incident(
+            case_number=f"OSAF-2025-062{i}", location_description="Tied Beach",
+            country="United States", classification="unprovoked",
+            verification_status="verified", incident_date=date(2025, 6, 1),
+        )
+        for i in range(6)
+    ])
+    await db.commit()
+
+    page1 = await client.get("/api/v1/incidents?per_page=3&page=1")
+    page2 = await client.get("/api/v1/incidents?per_page=3&page=2")
+    first = [i["case_number"] for i in page1.json()["data"]]
+    second = [i["case_number"] for i in page2.json()["data"]]
+
+    assert len(first) == 3 and len(second) == 3
+    assert not set(first) & set(second)  # no record appears on both pages

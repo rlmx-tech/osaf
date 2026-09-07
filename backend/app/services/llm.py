@@ -24,7 +24,10 @@ async def _call_ollama(prompt: str) -> str | None:
                     "model": settings.ollama_model,
                     "prompt": prompt,
                     "stream": False,
-                    "think": False,
+                    # "think" is deliberately not sent — see the note in
+                    # collector/extractor.py._call_ollama. On glm-5.3, sending
+                    # think=False makes the model write its reasoning out as
+                    # prose instead of suppressing it, which buries the JSON.
                     "options": {"temperature": 0.1, "num_predict": 2048},
                 },
             )

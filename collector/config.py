@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # Ollama
     ollama_url: str = "https://ollama.com"
     ollama_api_key: str = ""  # Bearer token for Ollama Cloud; empty = no auth (local)
-    ollama_model: str = "glm-5.2:cloud"
+    ollama_model: str = "glm-5.3-flash:cloud"
     ollama_timeout: int = 300
 
     # Reddit (asyncpraw)

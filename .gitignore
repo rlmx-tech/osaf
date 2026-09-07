@@ -47,3 +47,8 @@ frontend/dist/
 # Playwright MCP scratch artifacts
 .playwright-mcp/
 .gstack/
+
+# uv lockfiles — local dev artifact only. The Dockerfiles install with
+# `pip install` from pyproject.toml and use no lockfile, so committing these
+# would imply a reproducibility guarantee the build does not actually give.
+uv.lock

@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # Ollama Cloud (used by the LLM near-dupe batch job)
     ollama_url: str = "https://ollama.com"
     ollama_api_key: str = ""
-    ollama_model: str = "glm-5.2:cloud"
+    ollama_model: str = "glm-5.3-flash:cloud"
     ollama_timeout: int = 300
 
     # Environment: "development" disables cookie Secure flag and OpenAPI gate

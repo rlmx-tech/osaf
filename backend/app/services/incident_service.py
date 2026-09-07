@@ -193,12 +193,18 @@ class IncidentService:
         count_query = select(func.count()).select_from(query.subquery())
         total = (await self.db.execute(count_query)).scalar_one()
 
-        # Sort
+        # Sort. NULLS LAST in both directions: Postgres defaults a DESC sort to
+        # NULLS FIRST, which put undated records — the least complete ones, often
+        # with no coordinates either — at the top of the default listing.
+        # case_number breaks ties so paging cannot repeat or skip a record when
+        # many incidents share a sort value (common for incident_date).
         if sort not in ALLOWED_SORT_FIELDS:
             sort = "incident_date"
         sort_column = getattr(Incident, sort, Incident.incident_date)
         order_func = desc if order == "desc" else asc
-        query = query.order_by(order_func(sort_column))
+        query = query.order_by(
+            order_func(sort_column).nullslast(), Incident.case_number.desc()
+        )
 
         # Paginate
         offset = (page - 1) * per_page

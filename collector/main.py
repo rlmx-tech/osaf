@@ -10,6 +10,7 @@ import signal
 import sys
 
 from collector.config import settings
+from collector.extractor import check_model_available
 from collector.news_client import NewsClient
 from collector.pipeline import process_items
 from collector.pollers.base import BasePoller
@@ -86,6 +87,23 @@ class Scheduler:
         if not await self._news.authenticate():
             logger.error("Failed to authenticate news client with OSAF API")
             sys.exit(1)
+
+        # Preflight the LLM. Without this a retired or misspelled model tag
+        # fails silently on every item while the service looks healthy.
+        usable, reason = await check_model_available()
+        if not usable:
+            logger.error(
+                "Ollama model %r is unusable: %s", settings.ollama_model, reason
+            )
+            logger.error(
+                "Set COLLECTOR_OLLAMA_MODEL to a model this account can reach; "
+                "https://ollama.com/api/tags lists what is currently served."
+            )
+            sys.exit(1)
+        if reason != "ok":
+            logger.warning("Ollama model %r: %s", settings.ollama_model, reason)
+        else:
+            logger.info("Ollama model %r responded to preflight", settings.ollama_model)
 
         # Launch all pollers concurrently
         tasks = [

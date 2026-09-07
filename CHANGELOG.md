@@ -59,6 +59,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Extraction had been dead since 2026-07-15.** The deployed collector was
+  configured for `qwen3-coder:480b`, which Ollama Cloud retired on that date
+  and now answers with `HTTP 410`. `_call_ollama` caught the error, logged it,
+  and returned `None`, so the pipeline dropped every item while the container
+  stayed healthy and the Shark News feed kept filling from the non-LLM capture
+  path — roughly seven weeks of silent data loss. Both services now use
+  `glm-5.3-flash:cloud`, verified end to end against the live API.
+
+- **`think: False` broke JSON extraction on glm-5.3 models.** The parameter was
+  correct for glm-5.2 but inverts on glm-5.3: measured against the real
+  extraction prompt, `think: False` made the model emit its reasoning as
+  ordinary prose ahead of the JSON (~8000 characters, and `glm-5.3:cloud`
+  became unparseable outright), while omitting the key returned bare JSON in
+  ~700 characters. `think: True` parses but runs about 3x slower for no gain.
+  The key is no longer sent, and a test asserts it stays that way.
+
+- **The collector now preflights its model at startup.** A retired or
+  misspelled model tag previously failed silently on every item. Startup makes
+  one cheap call and exits with a clear message on `401/403/404/410`, while
+  treating a network blip or `5xx` as transient and continuing.
+
+- **Undated incidents led the public incident list.** Postgres defaults a DESC
+  sort to NULLS FIRST, so the default `?sort=incident_date&order=desc` put
+  records with no date — often with no coordinates either — at the top of the
+  page everyone lands on. Both directions now sort NULLS LAST, with
+  `case_number` as a tiebreaker so paging cannot repeat or skip a record when
+  many incidents share a date.
+
 - **Collector dropped incidents on non-object LLM output.** The collector's
   `_parse_json_response` lacked the `isinstance(dict)` guard its backend twin
   has, so valid JSON that is not an object — an array, a bare string, a number
@@ -80,13 +108,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   `ON DELETE SET NULL` so the trail outlives the record. Both change data
   semantics, so neither was chosen unilaterally.
 
-- **The deployed extraction model contradicts the code's stated rationale.**
-  `collector/extractor.py` documents that a general instruction-following
-  model is used "not a code model, because the task is structured extraction
-  from prose" and `collector/config.py` defaults to `glm-5.2:cloud`
-  accordingly — but `docker-compose.yml` and both `.env.example` files set
-  `COLLECTOR_OLLAMA_MODEL=qwen3-coder:480b`, and compose wins. Whichever is
-  right, the two should agree.
+- **A backlog may exist from the extraction outage.** Every item the collector
+  saw between 2026-07-15 and the model fix failed extraction. Depending on how
+  `collection_jobs` retry state and dead letters aged, some of that window may
+  be recoverable by replaying dead-lettered jobs; some is likely lost. Worth
+  checking the dead-letter count in the admin Evidence Queue after deploying.
 
 - **The backend test suite is runnable again, and can no longer drop a real
   database.** 142 of its 306 tests errored with `ConnectionRefusedError`
