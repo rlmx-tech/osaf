@@ -74,6 +74,7 @@ def _scalars_unique_all(items) -> MagicMock:
 class TestGetIncident:
     async def test_raises_404_when_not_found(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(return_value=_scalar_none_result())
         service = IncidentService(db)
         with pytest.raises(HTTPException) as exc:
@@ -84,6 +85,7 @@ class TestGetIncident:
     async def test_returns_incident_response_no_coords(self):
         incident = _make_valid_incident(coordinates=None)
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(return_value=_scalar_result(incident))
         service = IncidentService(db)
         result = await service.get_incident(incident.id)
@@ -94,6 +96,7 @@ class TestGetIncident:
     async def test_db_called_once_without_coords(self):
         incident = _make_valid_incident(coordinates=None)
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(return_value=_scalar_result(incident))
         service = IncidentService(db)
         await service.get_incident(incident.id)
@@ -103,6 +106,7 @@ class TestGetIncident:
 class TestListIncidents:
     async def test_empty_db_returns_empty_list(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),        # count
             _scalars_unique_all([]),  # incidents
@@ -114,6 +118,7 @@ class TestListIncidents:
 
     async def test_pagination_meta_calculated(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(100),      # count
             _scalars_unique_all([]),  # incidents (empty page)
@@ -127,6 +132,7 @@ class TestListIncidents:
 
     async def test_invalid_sort_falls_back_to_incident_date(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),
             _scalars_unique_all([]),
@@ -138,6 +144,7 @@ class TestListIncidents:
 
     async def test_with_classification_filter(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),
             _scalars_unique_all([]),
@@ -148,6 +155,7 @@ class TestListIncidents:
 
     async def test_with_country_filter(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),
             _scalars_unique_all([]),
@@ -158,6 +166,7 @@ class TestListIncidents:
 
     async def test_with_fatal_filter(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),
             _scalars_unique_all([]),
@@ -168,6 +177,7 @@ class TestListIncidents:
 
     async def test_with_date_range_filter(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),
             _scalars_unique_all([]),
@@ -178,6 +188,7 @@ class TestListIncidents:
 
     async def test_with_activity_filter(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),
             _scalars_unique_all([]),
@@ -188,6 +199,7 @@ class TestListIncidents:
 
     async def test_with_severity_filter(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),
             _scalars_unique_all([]),
@@ -198,6 +210,7 @@ class TestListIncidents:
 
     async def test_with_search_filter(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),
             _scalars_unique_all([]),
@@ -208,6 +221,7 @@ class TestListIncidents:
 
     async def test_with_species_filter(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),
             _scalars_unique_all([]),
@@ -218,6 +232,7 @@ class TestListIncidents:
 
     async def test_with_report_source_filter(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),
             _scalars_unique_all([]),
@@ -229,6 +244,7 @@ class TestListIncidents:
     async def test_with_incident_in_results_no_coords(self):
         incident = _make_valid_incident(coordinates=None)
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(1),
             _scalars_unique_all([incident]),
@@ -241,6 +257,7 @@ class TestListIncidents:
 
     async def test_asc_order(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(side_effect=[
             _scalar_result(0),
             _scalars_unique_all([]),
@@ -253,6 +270,7 @@ class TestListIncidents:
 class TestDeleteIncident:
     async def test_raises_404_when_not_found(self):
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(return_value=_scalar_none_result())
         service = IncidentService(db)
         with pytest.raises(HTTPException) as exc:
@@ -262,6 +280,7 @@ class TestDeleteIncident:
     async def test_deletes_and_commits(self):
         incident = _make_valid_incident()
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(return_value=_scalar_result(incident))
         db.delete = AsyncMock()
         db.commit = AsyncMock()
@@ -275,6 +294,7 @@ class TestUpdateIncident:
     async def test_raises_404_when_not_found(self):
         from app.schemas.incident import IncidentUpdate
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(return_value=_scalar_none_result())
         service = IncidentService(db)
         with pytest.raises(HTTPException) as exc:
@@ -319,6 +339,7 @@ class TestVerifiedOnlyInvariant:
         many exist, even though none of them are returned.
         """
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(
             side_effect=[_scalar_result(0), _scalars_unique_all([])]
         )
@@ -347,6 +368,7 @@ class TestVerifiedOnlyInvariant:
     async def test_get_public_incident_constrains_to_verified(self):
         """The single-incident public read carries the same constraint."""
         db = AsyncMock()
+        db.add = MagicMock()
         db.execute = AsyncMock(return_value=_scalar_none_result())
         service = IncidentService(db)
 

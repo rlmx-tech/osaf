@@ -72,6 +72,16 @@ def _incident_to_response(incident: Incident) -> dict:
     return data
 
 
+# Kept on the audit entry when an incident is deleted, so the trail records
+# what was destroyed rather than only that something was. Deliberately excludes
+# victim_name and injury detail: the audit log is not a backdoor around the
+# public disclosure boundary, and a deletion is often a privacy request.
+_DELETED_SNAPSHOT_FIELDS = (
+    "case_number", "incident_date", "location_description", "country",
+    "state_province", "classification", "verification_status", "fatal",
+)
+
+
 def _audit_value(value):
     """Coerce a field value into something JSONB can store.
 
@@ -298,6 +308,7 @@ class IncidentService:
             await attach_sources_to_incident(self.db, existing, data.sources)
             self.db.add(IncidentAuditLog(
                 incident_id=existing.id,
+                case_number=existing.case_number,
                 action="updated",
                 changed_by=user.id if user else None,
                 notes="sources attached to existing incident by deduplication",
@@ -359,6 +370,7 @@ class IncidentService:
 
         self.db.add(IncidentAuditLog(
             incident_id=incident.id,
+            case_number=incident.case_number,
             action="created",
             changed_by=user.id if user else None,
             notes="direct create",
@@ -403,6 +415,7 @@ class IncidentService:
         if changes:
             self.db.add(IncidentAuditLog(
                 incident_id=incident.id,
+                case_number=incident.case_number,
                 action="updated",
                 changed_by=user.id if user else None,
                 changes=changes,
@@ -412,13 +425,29 @@ class IncidentService:
         await self.db.commit()
         return await self.get_incident(incident_id)
 
-    async def delete_incident(self, incident_id: UUID) -> None:
+    async def delete_incident(self, incident_id: UUID, user: User | None = None) -> None:
         result = await self.db.execute(
             select(Incident).where(Incident.id == incident_id)
         )
         incident = result.scalar_one_or_none()
         if not incident:
             raise HTTPException(status_code=404, detail="Incident not found")
+
+        # Written before the delete, and it survives it: the FK is
+        # ON DELETE SET NULL and the entry carries its own case_number, so the
+        # trail still says which record was destroyed and by whom.
+        self.db.add(IncidentAuditLog(
+            incident_id=incident.id,
+            case_number=incident.case_number,
+            action="deleted",
+            changed_by=user.id if user else None,
+            changes={
+                field: _audit_value(getattr(incident, field, None))
+                for field in _DELETED_SNAPSHOT_FIELDS
+            },
+            notes="incident permanently deleted",
+        ))
+        await self.db.flush()
 
         await self.db.delete(incident)
         await self.db.commit()

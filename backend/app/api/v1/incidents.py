@@ -92,4 +92,4 @@ async def delete_incident(
     db: AsyncSession = Depends(get_db),
 ):
     service = IncidentService(db)
-    await service.delete_incident(incident_id)
+    await service.delete_incident(incident_id, user)

@@ -97,3 +97,82 @@ async def test_no_op_update_writes_no_audit_entry(
     )
     assert response.status_code == 200
     assert await _entries_for(db, sample_incident.id) == []
+
+
+@pytest.mark.asyncio
+async def test_delete_is_audited_and_the_entry_survives(
+    client: AsyncClient, admin_user: User, sample_incident: Incident, db
+):
+    """The entry recording a deletion must outlive the deleted incident.
+
+    Under the old ON DELETE CASCADE the audit row was destroyed along with the
+    incident, so the single most destructive action erased its own evidence.
+    """
+    case_number = sample_incident.case_number
+    incident_id = sample_incident.id
+
+    response = await client.delete(
+        f"/api/v1/incidents/{incident_id}", headers=auth_header(admin_user)
+    )
+    assert response.status_code == 204
+
+    # The incident is really gone.
+    gone = await db.execute(select(Incident).where(Incident.id == incident_id))
+    assert gone.scalar_one_or_none() is None
+
+    # The trail is not.
+    entries = (await db.execute(
+        select(IncidentAuditLog).where(IncidentAuditLog.case_number == case_number)
+    )).scalars().all()
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.action == "deleted"
+    assert entry.changed_by == admin_user.id
+    assert entry.incident_id is None          # FK nulled, row retained
+    assert entry.case_number == case_number   # still identifies its subject
+
+
+@pytest.mark.asyncio
+async def test_delete_snapshot_records_what_was_destroyed(
+    client: AsyncClient, admin_user: User, sample_incident: Incident, db
+):
+    case_number = sample_incident.case_number
+    await client.delete(
+        f"/api/v1/incidents/{sample_incident.id}", headers=auth_header(admin_user)
+    )
+
+    entry = (await db.execute(
+        select(IncidentAuditLog).where(IncidentAuditLog.case_number == case_number)
+    )).scalar_one()
+
+    assert entry.changes["country"] == "United States"
+    assert entry.changes["classification"] == "unprovoked"
+    assert entry.changes["verification_status"] == "verified"
+
+    # The audit log is not a backdoor around the public disclosure boundary.
+    assert "victim_name" not in entry.changes
+    assert "victim_injury_description" not in entry.changes
+
+
+@pytest.mark.asyncio
+async def test_earlier_entries_survive_deletion_too(
+    client: AsyncClient, admin_user: User, sample_incident: Incident, db
+):
+    """An update logged before the delete must still be there afterwards."""
+    await client.put(
+        f"/api/v1/incidents/{sample_incident.id}",
+        json={"country": "New Zealand"},
+        headers=auth_header(admin_user),
+    )
+    case_number = sample_incident.case_number
+    await client.delete(
+        f"/api/v1/incidents/{sample_incident.id}", headers=auth_header(admin_user)
+    )
+
+    actions = {
+        e.action
+        for e in (await db.execute(
+            select(IncidentAuditLog).where(IncidentAuditLog.case_number == case_number)
+        )).scalars().all()
+    }
+    assert actions == {"updated", "deleted"}

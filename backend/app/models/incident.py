@@ -96,9 +96,10 @@ class Incident(Base):
         "IncidentSource", back_populates="incident", cascade="all, delete-orphan",
         lazy="selectin",
     )
-    audit_logs = relationship(
-        "IncidentAuditLog", back_populates="incident", cascade="all, delete-orphan"
-    )
+    # No delete-orphan cascade: audit entries deliberately survive their
+    # incident. The FK is ON DELETE SET NULL, and each entry keeps its own
+    # case_number so it still identifies what it describes.
+    audit_logs = relationship("IncidentAuditLog", back_populates="incident")
     submitter = relationship(
         "User", back_populates="submitted_incidents", foreign_keys=[submitted_by]
     )

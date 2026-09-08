@@ -29,8 +29,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   wrote nothing to `incident_audit_log`, so `/admin/audit-log` showed nothing
   for them. Both now log, attributed to the authenticated user, with updates
   recording a per-field `{from, to}` diff and no entry at all for a no-op.
-  Note: `DELETE /incidents/{id}` still leaves no trace, because
-  `incident_audit_log.incident_id` cascades on delete — see Known issues.
+  `DELETE /incidents/{id}` is covered too — see the entry under Fixed for why
+  that one needed a schema change to be possible at all.
 
 - **`SECRET_KEY` had no strength validation.** Compose's `${SECRET_KEY:?...}`
   only rejects unset or empty, so the `.env.example` placeholder would boot a
@@ -53,9 +53,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   the deploy docs describe, it would have auto-published LLM output with no
   review gate.
 
-- **Frontend dependencies.** `react-router-dom` 6.30.4 → 6.30.6 and `postcss`
-  8.5.18 → 8.5.28 clear 3 of 5 npm advisories, including both HIGH severity
-  (nanoid, browserslist).
+- **Frontend dependencies: `npm audit` now reports zero vulnerabilities**, down
+  from 5 (2 HIGH, 3 moderate). `postcss` 8.5.18 → 8.5.28 and a transitive
+  refresh cleared nanoid and browserslist; `react-router-dom` 6.30.4 → 7.18.3
+  cleared the remaining two (see Fixed).
 
 ### Fixed
 
@@ -105,21 +106,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   collecting nothing. Now required when the Ollama URL is remote; still
   optional for a local instance.
 
+- **`DELETE /incidents/{id}` is now audited, and the entry survives the
+  delete.** `incident_audit_log.incident_id` was `ON DELETE CASCADE`, so an
+  audit row written for a deletion was destroyed along with the incident it
+  described — the one action most worth auditing erased its own evidence. The
+  FK is now `ON DELETE SET NULL` with a nullable `incident_id`, and each entry
+  carries its own `case_number` so it still identifies its subject once the
+  incident is gone. Deletion entries include a field snapshot of what was
+  destroyed, deliberately excluding `victim_name` and injury detail so the
+  audit log is not a backdoor around the public disclosure boundary. Migration
+  `b2c3d4e5f6a7` backfills `case_number` for existing history. Chose this over
+  soft-delete: soft-delete would have required a `deleted_at` filter on every
+  query, and one missed filter leaks a deleted record — the same class of bug
+  as the stats leak above.
+
+- **Relevance matching ignored word boundaries.** `is_shark_relevant` tested
+  species names as plain substrings, so short names matched inside unrelated
+  words: an r/newzealand bird-of-the-year post was captured because the
+  submitter's username was `/u/makoextinct`, and "korimako" would do the same.
+  Terms are now matched on word boundaries with plural and possessive forms
+  allowed, so "sharks" and "a shark's tooth" still count. Three items in the
+  live feed came in this way. The gate remains deliberately recall-favoring;
+  matching a fragment of an unrelated word was never recall, only noise.
+
+- **`react-router-dom` upgraded 6.30.6 → 7.18.3**, clearing the last two npm
+  advisories (open redirect via backslash, and `deserializeErrors` constructor
+  injection). `npm audit` now reports zero vulnerabilities. The app uses only
+  declarative APIs — `BrowserRouter`, `Routes`, `Route`, `Link`, `NavLink`,
+  `Navigate`, `useNavigate`, `useParams` — so the upgrade was drop-in; build,
+  tests, and a module-graph transform check all pass.
+
 ### Known issues
 
-- **`DELETE /incidents/{id}` cannot be audited as things stand.**
-  `incident_audit_log.incident_id` is `ON DELETE CASCADE` and the ORM
-  relationship uses `cascade="all, delete-orphan"`, so any audit row written
-  for a deletion is destroyed along with the incident it describes. Fixing it
-  needs a decision: soft-delete incidents, or make `incident_id` nullable with
-  `ON DELETE SET NULL` so the trail outlives the record. Both change data
-  semantics, so neither was chosen unilaterally.
+- **632 incident candidates are waiting on admin approval.** The
+  evidence-ingestion rework made publication require an explicit admin action,
+  and none has happened since the day it shipped: the last candidate published
+  was 2026-07-13, against 6543 published before the cutover and a newest
+  candidate created hours ago. The pipeline itself is healthy end to end —
+  8732 collection jobs completed, none failed or dead-lettered — so this is a
+  workflow gap, not a defect. It needs a decision on whether high-confidence
+  candidates should auto-publish or whether the queue gets worked through
+  manually.
 
-- **A backlog may exist from the extraction outage.** Every item the collector
-  saw between 2026-07-15 and the model fix failed extraction. Depending on how
-  `collection_jobs` retry state and dead letters aged, some of that window may
-  be recoverable by replaying dead-lettered jobs; some is likely lost. Worth
-  checking the dead-letter count in the admin Evidence Queue after deploying.
 
 - **The backend test suite is runnable again, and can no longer drop a real
   database.** 142 of its 306 tests errored with `ConnectionRefusedError`
