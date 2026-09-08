@@ -30,7 +30,22 @@ class FakeNews:
         self.failures.append({"job_id": job_id, "reason": reason})
 
 
-def _raw(url, title, content):
+# Filler so items clear pipeline.MIN_PROMOTABLE_BODY_CHARS. These tests are
+# about what happens AFTER the body gate — candidate recording, verification,
+# duplicate handling — so they need a body the gate accepts. Deliberately
+# neutral wording: it must not make a non-shark fixture look shark-relevant.
+_FILLER = (
+    " Local officials provided an update on the matter during a briefing on "
+    "Tuesday, and said further information would be released once the review "
+    "concludes. Residents were asked to follow posted guidance in the meantime, "
+    "and additional signage has been installed at the main access points. "
+) * 3
+
+
+def _raw(url, title, content, promotable=True):
+    """Build a RawItem. Set promotable=False to exercise the headline-only gate."""
+    if promotable:
+        content = f"{content}{_FILLER}"
     return RawItem(source_platform=SourcePlatform.YOUTUBE, source_name="C",
                    source_url=url, title=title, content=content)
 

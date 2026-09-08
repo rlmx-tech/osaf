@@ -1,6 +1,7 @@
 """Core pipeline: poll → filter → extract → verify → submit."""
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from collector.extractor import apply_corrections, extract_incident, verify_incident
@@ -23,6 +24,52 @@ def derive_event_type(incident: "ExtractedIncident | None") -> str:
 # Minimum confidence threshold to submit
 MIN_EXTRACTION_CONFIDENCE = 0.4
 MIN_VERIFICATION_CONFIDENCE = 0.5
+
+# An item needs this much body text, beyond its own title, before it may become
+# an incident. Google News RSS serves the headline as the body, and asked to
+# build a dated, geocoded, classified incident from that the extractor guesses:
+# retrospectives, follow-ups and policy pieces all come out as fresh attacks.
+# Measured 2026-09-08, glm-5.3-flash turned "Three years after fatal shark
+# attack, community cements teacher's legacy" into a NEW fatality at 0.80
+# confidence, deriving a date by arithmetic. A stronger model made that failure
+# more confident, so the control belongs on the input, not on the judgement.
+MIN_PROMOTABLE_BODY_CHARS = 400
+
+_HTML_TAG = re.compile(r"<[^>]+>")
+
+
+def has_promotable_body(raw: RawItem) -> bool:
+    """Whether an item carries enough real text to support an incident record.
+
+    Three things are checked, and the character floor is the weakest of them.
+
+    A poller that went looking for an article and came back empty says so in
+    extra["has_article_body"], and that answer wins outright. Measured
+    2026-09-08 against the live feeds, Google News search summaries are an HTML
+    list of *related headlines* running 470-860 characters — long enough to
+    clear any floor, and containing no article whatsoever. Pollers that carry
+    their own text rather than a link (Reddit, YouTube, the tracker) set no flag
+    and are judged on the text alone.
+
+    Markup is then stripped, because tags are not prose, and the title is
+    removed, because aggregator stubs are the headline repeated and counting raw
+    length would let repetition clear the floor.
+
+    Items that fail are still captured into Shark News — nothing is lost from
+    the feed, they simply cannot become incidents.
+    """
+    if (raw.extra or {}).get("has_article_body") is False:
+        return False
+
+    content = _HTML_TAG.sub(" ", raw.content or "").strip()
+    if not content:
+        return False
+
+    title = (raw.title or "").strip()
+    if title:
+        content = content.replace(title, " ")
+
+    return len(" ".join(content.split())) >= MIN_PROMOTABLE_BODY_CHARS
 
 
 def _news_payload(
@@ -65,6 +112,7 @@ async def process_items(
         "promoted_sighting": 0,
         "skipped_seen": 0,
         "skipped_not_shark": 0,
+        "skipped_headline_only": 0,
         "skipped_irrelevant": 0,
         "skipped_low_confidence": 0,
         "skipped_duplicate": 0,
@@ -111,6 +159,13 @@ async def process_items(
                 logger.warning("pipeline: news capture returned no id for %s", raw.source_url)
         except Exception:
             logger.exception("pipeline: news capture failed for %s", raw.source_url)
+
+        # GATE 1.5 — is there an article behind this, or just a headline?
+        # Checked before extraction so a stub never reaches the model at all.
+        if not has_promotable_body(raw):
+            stats["skipped_headline_only"] += 1
+            await news_client.complete_without_incident(job_id, "news", "headline_only")
+            continue
 
         # GATE 2 — is it a promotable event?
         try:

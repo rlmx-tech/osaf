@@ -14,6 +14,7 @@ from collector.extractor import check_model_available
 from collector.news_client import NewsClient
 from collector.pipeline import process_items
 from collector.pollers.base import BasePoller
+from collector.pollers.gdelt import GdeltPoller
 from collector.pollers.news import NewsPoller
 from collector.pollers.reddit import RedditPoller
 from collector.pollers.tracker import TrackerPoller
@@ -37,6 +38,7 @@ class Scheduler:
         self._running = True
 
         self._pollers: list[tuple[BasePoller, int]] = [
+            (GdeltPoller(), settings.gdelt_interval),
             (NewsPoller(), settings.news_interval),
             (YouTubePoller(), settings.youtube_interval),
             (RedditPoller(), settings.reddit_interval),

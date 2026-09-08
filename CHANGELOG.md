@@ -60,6 +60,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **The promotion gate passed aggregator stubs as if they were articles.** A
+  live run showed 60 Google News items clearing the 400-character floor. Their
+  summaries turned out to be an HTML `<ol>` of *related headlines* running
+  470-862 characters: long enough to pass a length check, containing no article
+  whatsoever. That is precisely the fabrication input the gate exists to stop,
+  and feeding it to the extractor made the model more confident, not less
+  (0.80 against 0.30 on the same incident). Three things are checked now. A
+  poller that went looking for an article and came back empty says so in
+  `extra["has_article_body"]`, and that answer wins outright. Markup is
+  stripped before measuring, because tags are not prose. The title is removed,
+  because a stub is the headline repeated and raw length would let repetition
+  clear the floor. Items that fail are still captured into Shark News — nothing
+  is lost from the feed, they simply cannot become incidents. After the fix,
+  Google News drops to 0 promotable of 75 and Bing contributes 22 real bodies
+  of 1,201-12,253 characters.
+
 - **`qwen3-coder:480b` was a latent landmine in the shipped defaults.** Ollama
   Cloud retired it on 2026-07-15; it now answers `HTTP 410`. It was the
   `docker-compose.yml` default and the value in both `.env.example` files, so
@@ -245,6 +261,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   search are escaped so user input is matched literally. Commit `8877882`.
 
 ### Added
+
+- **The collector fetches real article bodies.** Until now every news item
+  carried only the headline and the feed's own summary, which is what let a
+  wrapper link with no article behind it reach the extractor at all.
+  `collector/article_fetch.py` retrieves the publisher page and runs it through
+  trafilatura, and both the news poller and the new GDELT poller use it. This
+  is the collector's first outbound fetch to arbitrary third-party domains —
+  every earlier fetch went to an operator-configured feed or the one
+  allowlisted tracker — so the SSRF guard carries real weight: `is_global`
+  address checks plus an explicit 100.64.0.0/10 block, revalidated on every
+  redirect hop rather than only on the URL first supplied. Responses are capped
+  at 2 MB and 20 seconds. Bodies are memoized in a bounded LRU that remembers
+  misses as well as hits, because a paywall or a JavaScript shell will not
+  start yielding text on the next poll and retrying it every ten minutes is
+  abuse of the publisher with none of the payoff.
+
+- **Bing News RSS feeds (5).** Google News wrapper links do not redirect to the
+  publisher, so those feeds can never supply an article. Bing's wrappers do,
+  measured 2026-09-08, and they now contribute the bodies that make an incident
+  possible. Quoted-phrase queries return nothing there, so these stay as bare
+  keyword searches.
+
+- **GDELT document API poller.** Discovery across GDELT's indexed news
+  worldwide rather than the handful of RSS endpoints, throttled to one request
+  per 6 seconds and abandoning the rest of a cycle on a 429 instead of pressing
+  a refusal. Note that as of 2026-09-08 the GDELT doc 2.0 API is returning 429
+  to every caller — confirmed from two unrelated hosts on a first request — so
+  the poller contributes nothing until that clears. It degrades to zero items,
+  not to errors.
 
 - **Durable evidence ingestion and incident candidates.** Collector input now
   passes through immutable `source_documents`, leased/retryable

@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     reddit_interval: int = 900        # 15 min
     news_interval: int = 600          # 10 min
     tracker_interval: int = 1800      # 30 min
+    gdelt_interval: int = 1800        # 30 min
+
+    # GDELT document API
+    gdelt_max_records: int = 75       # per query; GDELT's ceiling is 250
+    gdelt_timespan: str = "6h"        # lookback window per query
+
+    # Shared by every poller that fetches a publisher article body.
+    article_fetch_timeout: int = 20   # seconds per article
 
     # Dedup database
     state_file: str = "/app/data/collector_state.json"
@@ -153,6 +161,41 @@ NEWS_RSS_FEEDS = [
         "name": "Google News - Shark Attack South Africa",
         "url": "https://news.google.com/rss/search?q=shark+attack+south+africa&hl=en-ZA&gl=ZA&ceid=ZA:en",
     },
+    # Bing News. Its link is a wrapper too, but unlike Google's it redirects to
+    # the publisher, so these entries can carry a real article body and become
+    # incidents. Verified 2026-09-08; the quoted-phrase form returns nothing, so
+    # these stay as bare keyword queries.
+    {
+        "name": "Bing News - Shark Attack",
+        "url": "https://www.bing.com/news/search?q=shark+attack&format=RSS",
+    },
+    {
+        "name": "Bing News - Shark Bite",
+        "url": "https://www.bing.com/news/search?q=shark+bite&format=RSS",
+    },
+    {
+        "name": "Bing News - Shark Sighting",
+        "url": "https://www.bing.com/news/search?q=shark+sighting&format=RSS",
+    },
+    {
+        "name": "Bing News - Shark Attack Australia",
+        "url": "https://www.bing.com/news/search?q=shark+attack&setmkt=en-au&format=RSS",
+    },
+    {
+        "name": "Bing News - Shark Attack South Africa",
+        "url": "https://www.bing.com/news/search?q=shark+attack&setmkt=en-za&format=RSS",
+    },
+]
+
+# GDELT document API queries. Unlike Google News RSS, GDELT returns the
+# publisher's own URL, which is what lets the collector fetch a real article
+# body — and the promotion gate refuses anything without one.
+GDELT_QUERIES = [
+    {"name": "GDELT - Shark Attack", "query": '"shark attack"'},
+    {"name": "GDELT - Shark Bite", "query": '"shark bite"'},
+    {"name": "GDELT - Bitten By A Shark", "query": '"bitten by a shark"'},
+    {"name": "GDELT - Shark Sighting", "query": '"shark sighting"'},
+    {"name": "GDELT - Beach Closed Shark", "query": '"beach closed" shark'},
 ]
 
 WEB_SCRAPERS = [
