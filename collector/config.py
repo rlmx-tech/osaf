@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     ollama_api_key: str = ""  # Bearer token for Ollama Cloud; empty = no auth (local)
     ollama_model: str = "glm-5.3-flash:cloud"
     ollama_timeout: int = 300
+    # Caps thinking and answer together, not the answer alone. glm-5.3-flash
+    # reasons before it replies, and measured 2026-09-08 against the live
+    # verification prompt it spent 5,392-9,354 characters doing so — roughly
+    # 1,350-2,340 tokens. At the old value of 2048 the budget ran out before the
+    # model wrote any JSON on half of those calls, which surfaced as an empty
+    # 200 response and looked exactly like an outage.
+    ollama_num_predict: int = 4096
 
     # Reddit (asyncpraw)
     reddit_client_id: str = ""

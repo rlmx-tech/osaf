@@ -60,6 +60,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Half of all verification passes were being thrown away as "no response from
+  Ollama".** glm-5.3-flash reasons before it answers, and `num_predict` caps the
+  reasoning and the answer together — it is not a limit on the reply alone. The
+  verification prompt asks the model to check five things against the article, and
+  measured 2026-09-08 against the live API it spent 5,392-9,354 characters
+  thinking about that. On the long runs the 2048-token budget was gone before it
+  wrote a single character of JSON, so the API returned HTTP 200 with an empty
+  `response` and `done_reason: "length"`. Four of eight identical calls came back
+  empty. The pipeline read that as an outage, marked the incident invalid, and
+  downgraded it to 0% confidence — failing in the safe direction, but silently
+  suppressing real incidents and looking like Ollama was down. The budget is now
+  a setting (`COLLECTOR_OLLAMA_NUM_PREDICT`, default 4096) and truncation is
+  logged by name rather than folded into the generic no-response path. Verified
+  live: 0 of 8 empty at 4096, with peak usage of 2,452 tokens.
+
 - **The promotion gate passed aggregator stubs as if they were articles.** A
   live run showed 60 Google News items clearing the 400-character floor. Their
   summaries turned out to be an HTML `<ol>` of *related headlines* running

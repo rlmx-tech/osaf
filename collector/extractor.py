@@ -268,12 +268,25 @@ async def _call_ollama(prompt: str) -> str | None:
                     # runs about 3x slower for no gain.
                     "options": {
                         "temperature": 0.1,
-                        "num_predict": 2048,
+                        "num_predict": settings.ollama_num_predict,
                     },
                 },
             )
             resp.raise_for_status()
-            return resp.json().get("response", "")
+            payload = resp.json()
+            answer = payload.get("response", "")
+            # num_predict caps reasoning and answer together. A model that
+            # thought its way through the whole budget returns HTTP 200 with an
+            # empty string, which is indistinguishable from an outage unless the
+            # reason is read. Saying so by name is the difference between "raise
+            # the budget" and "check whether Ollama is down".
+            if not answer and payload.get("done_reason") == "length":
+                logger.warning(
+                    "ollama: answer truncated — the model used all %d num_predict "
+                    "tokens on reasoning and emitted nothing",
+                    settings.ollama_num_predict,
+                )
+            return answer
         except httpx.HTTPError:
             logger.exception("ollama: request failed")
             return None
