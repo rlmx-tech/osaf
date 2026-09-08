@@ -59,13 +59,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- **Extraction had been dead since 2026-07-15.** The deployed collector was
-  configured for `qwen3-coder:480b`, which Ollama Cloud retired on that date
-  and now answers with `HTTP 410`. `_call_ollama` caught the error, logged it,
-  and returned `None`, so the pipeline dropped every item while the container
-  stayed healthy and the Shark News feed kept filling from the non-LLM capture
-  path — roughly seven weeks of silent data loss. Both services now use
-  `glm-5.3-flash:cloud`, verified end to end against the live API.
+- **`qwen3-coder:480b` was a latent landmine in the shipped defaults.** Ollama
+  Cloud retired it on 2026-07-15; it now answers `HTTP 410`. It was the
+  `docker-compose.yml` default and the value in both `.env.example` files, so
+  any fresh deploy — or any host whose `.env` did not override it — would have
+  had every extraction call fail. `_call_ollama` catches the error, logs it,
+  and returns `None`, so the pipeline would have dropped every item while the
+  container stayed healthy. It also contradicted `extractor.py`'s own docstring,
+  which specifies a general instruction-following model rather than a code
+  model. Both services now use `glm-5.3-flash:cloud`, verified end to end
+  against the live API.
+
+  For the record: the production host was not affected. Its `.env` set
+  `glm-5.2:cloud`, which works — 8732 collection jobs completed with none
+  failed or dead-lettered.
 
 - **`think: False` broke JSON extraction on glm-5.3 models.** The parameter was
   correct for glm-5.2 but inverts on glm-5.3: measured against the real

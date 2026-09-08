@@ -151,7 +151,12 @@ class TestCheckModelAvailable:
 
     @pytest.mark.asyncio
     async def test_the_real_qwen_retirement_shape_is_caught(self, monkeypatch):
-        """410 + retirement notice is exactly what broke production."""
+        """410 + retirement notice is the real shape of a retired model.
+
+        qwen3-coder:480b was the shipped compose/.env.example default and was
+        retired upstream on 2026-07-15. Production overrode it and so was never
+        affected, but a fresh deploy would have hit exactly this.
+        """
         ex = self._patch(
             monkeypatch, status=410,
             body="qwen3-coder:480b was retired at 2026-07-15 00:00:00 -0700 PDT",
