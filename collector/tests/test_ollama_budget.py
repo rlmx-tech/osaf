@@ -78,6 +78,19 @@ class TestTruncationIsDistinguishable:
         ), f"no truncation warning in {[r.message for r in caplog.records]}"
 
     @pytest.mark.asyncio
+    async def test_the_warning_reports_how_much_was_actually_used(
+        self, monkeypatch, caplog
+    ):
+        """Without eval_count there is no way to pick the next ceiling but by guessing."""
+        _patch_ollama(monkeypatch, _responder(
+            {"response": "", "done_reason": "length", "eval_count": 4096}
+        ))
+        with caplog.at_level("WARNING"):
+            await _call_ollama("hello")
+
+        assert any("4096" in r.getMessage() for r in caplog.records)
+
+    @pytest.mark.asyncio
     async def test_a_short_answer_that_hit_the_cap_is_still_returned(self, monkeypatch):
         """Truncated but non-empty is the parser's problem, not a dropped call."""
         _patch_ollama(monkeypatch, _responder(
@@ -113,5 +126,10 @@ class TestBudgetIsConfigurable:
 
     @pytest.mark.asyncio
     async def test_budget_default_leaves_room_for_the_reasoning_measured(self):
-        """9,354 characters of thinking is roughly 2,340 tokens. 2048 cannot fit it."""
-        assert settings.ollama_num_predict >= 4096
+        """9,354 characters of thinking is roughly 2,340 tokens. 2048 cannot fit it.
+
+        4096 was not enough either: it cut the production failure rate from 38.6%
+        to 14.3% rather than to zero, because real articles reason further than the
+        clean synthetic one the first measurement used.
+        """
+        assert settings.ollama_num_predict >= 8192

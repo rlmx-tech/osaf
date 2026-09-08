@@ -71,9 +71,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   empty. The pipeline read that as an outage, marked the incident invalid, and
   downgraded it to 0% confidence — failing in the safe direction, but silently
   suppressing real incidents and looking like Ollama was down. The budget is now
-  a setting (`COLLECTOR_OLLAMA_NUM_PREDICT`, default 4096) and truncation is
-  logged by name rather than folded into the generic no-response path. Verified
-  live: 0 of 8 empty at 4096, with peak usage of 2,452 tokens.
+  a setting (`COLLECTOR_OLLAMA_NUM_PREDICT`) and truncation is logged by name,
+  with the token count it actually reached, rather than folded into the generic
+  no-response path. 4096 cut the production rate from 38.6% to 14.3% but not to
+  zero — real articles reason further than the clean synthetic one the first
+  measurement used — so the default is 8192. The value is a ceiling and not an
+  allocation: a call that stops early is billed for what it generated, so
+  headroom is free on every request that does not need it.
 
 - **The promotion gate passed aggregator stubs as if they were articles.** A
   live run showed 60 Google News items clearing the 400-character floor. Their

@@ -282,8 +282,9 @@ async def _call_ollama(prompt: str) -> str | None:
             # the budget" and "check whether Ollama is down".
             if not answer and payload.get("done_reason") == "length":
                 logger.warning(
-                    "ollama: answer truncated — the model used all %d num_predict "
-                    "tokens on reasoning and emitted nothing",
+                    "ollama: answer truncated — the model used all %s of its %d "
+                    "num_predict tokens on reasoning and emitted nothing",
+                    payload.get("eval_count", "?"),
                     settings.ollama_num_predict,
                 )
             return answer
