@@ -136,6 +136,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   `Navigate`, `useNavigate`, `useParams` — so the upgrade was drop-in; build,
   tests, and a module-graph transform check all pass.
 
+- **`deploy/deploy.sh` left the site 502 after every deploy.** nginx resolves
+  the backend's container IP once at startup. `docker compose up -d` gives the
+  rebuilt backend a new IP but does not recreate nginx, whose image and config
+  are unchanged, so it kept proxying to an address nobody was listening on.
+  The stack reported healthy while the site was down. The script now restarts
+  nginx after bringing the stack up, and its health check goes through nginx on
+  the real bind port rather than straight at the backend — the proxy path is
+  the one that breaks.
+
 ### Known issues
 
 - **632 incident candidates are waiting on admin approval.** The
