@@ -63,18 +63,25 @@ async def _candidates_to_reject(db, min_body: int):
     """
     body_len = _stripped_body_length()
 
+    # NOT EXISTS, deliberately not NOT IN. ExtractedObservation.candidate_id is
+    # nullable, and `x NOT IN (subquery containing NULL)` is never true in SQL,
+    # so a single orphaned observation would silently select zero candidates.
+    # That is exactly what happened on the first production dry run.
     has_real_body = (
-        select(ExtractedObservation.candidate_id)
+        select(ExtractedObservation.id)
         .join(SourceDocument, SourceDocument.id == ExtractedObservation.source_document_id)
-        .where(body_len >= min_body)
-        .distinct()
+        .where(
+            ExtractedObservation.candidate_id == IncidentCandidate.id,
+            body_len >= min_body,
+        )
+        .exists()
     )
 
     stmt = (
         select(IncidentCandidate)
         .where(
             IncidentCandidate.status == "needs_review",
-            IncidentCandidate.id.not_in(has_real_body),
+            ~has_real_body,
         )
         .order_by(IncidentCandidate.created_at)
     )

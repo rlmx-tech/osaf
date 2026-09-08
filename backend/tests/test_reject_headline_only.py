@@ -117,3 +117,53 @@ async def test_candidate_with_no_observations_at_all_is_selected(db):
     await db.commit()
     doomed = await _candidates_to_reject(db, DEFAULT_MIN_BODY_CHARS)
     assert [c.id for c in doomed] == [candidate.id]
+
+
+@pytest.mark.asyncio
+async def test_orphaned_observation_does_not_suppress_selection(db):
+    """An observation with a NULL candidate_id must not blind the query.
+
+    Regression for a real bug: the first version used
+    `IncidentCandidate.id.not_in(subquery)`, and in SQL `x NOT IN (... NULL ...)`
+    is never true. candidate_id is nullable, so one orphaned observation made
+    the script select zero candidates — it reported "nothing to do" against a
+    production backlog of 672. Failed safe, but silently wrong.
+    """
+    candidate = await _make_candidate(db, [GOOGLE_STUB])
+
+    orphan_doc = SourceDocument(
+        id=uuid.uuid4(),
+        dedup_key=f"test:orphan:{uuid.uuid4()}",
+        source_platform="news_rss",
+        source_name="Orphan Feed",
+        source_url="https://example.com/orphan",
+        title="Orphan",
+        body_excerpt=REAL_ARTICLE,
+    )
+    db.add(orphan_doc)
+    await db.flush()
+    db.add(ExtractedObservation(
+        id=uuid.uuid4(),
+        source_document_id=orphan_doc.id,
+        candidate_id=None,                     # the NULL that broke NOT IN
+        extractor_name="test",
+        model_name="test-model",
+        prompt_version="1",
+        payload={},
+        payload_sha256=uuid.uuid4().hex + uuid.uuid4().hex,
+        event_type="attack",
+    ))
+    await db.commit()
+
+    doomed = await _candidates_to_reject(db, DEFAULT_MIN_BODY_CHARS)
+    assert [c.id for c in doomed] == [candidate.id]
+
+
+@pytest.mark.asyncio
+async def test_another_candidates_good_source_does_not_spare_this_one(db):
+    """The body check must be scoped per candidate, not global."""
+    stub_candidate = await _make_candidate(db, [GOOGLE_STUB])
+    await _make_candidate(db, [REAL_ARTICLE])
+
+    doomed = await _candidates_to_reject(db, DEFAULT_MIN_BODY_CHARS)
+    assert [c.id for c in doomed] == [stub_candidate.id]
