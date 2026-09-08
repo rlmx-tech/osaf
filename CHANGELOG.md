@@ -77,7 +77,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   zero — real articles reason further than the clean synthetic one the first
   measurement used — so the default is 8192. The value is a ceiling and not an
   allocation: a call that stops early is billed for what it generated, so
-  headroom is free on every request that does not need it.
+  headroom is free on every request that does not need it. Measured across three
+  production cycles against the same feeds: 22 of 57 calls empty at 2048, 6 of 42
+  at 4096, 0 of 45 at 8192.
 
 - **The promotion gate passed aggregator stubs as if they were articles.** A
   live run showed 60 Google News items clearing the 400-character floor. Their

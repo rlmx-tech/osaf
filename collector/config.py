@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     # This is a ceiling, not an allocation: a call that stops early is billed
     # for what it generated, so headroom is free on every request that does not
     # need it. Only a genuine runaway pays, and ollama_timeout bounds that.
-    # There is no reason to keep it tight.
+    # There is no reason to keep it tight. Measured across three production
+    # cycles on the same feeds: 22/57 empty at 2048, 6/42 at 4096, 0/45 here.
     ollama_num_predict: int = 8192
 
     # Reddit (asyncpraw)
