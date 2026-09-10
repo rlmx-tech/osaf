@@ -48,15 +48,13 @@ async def main(dry_run: bool = False, limit: int | None = None) -> None:
     api_url = "http://backend:8000/api/v1"
 
     async with httpx.AsyncClient(base_url=api_url, timeout=30) as client:
-        username = os.environ.get("COLLECTOR_OSAF_USERNAME", "collector")
-        password = os.environ.get("COLLECTOR_OSAF_PASSWORD", "")
-        resp = await client.post(
-            "/auth/login",
-            data={"username": username, "password": password},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        resp.raise_for_status()
-        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        from collector.osaf_auth import login
+
+        token = await login(client)
+        if token is None:
+            logger.error("Cannot authenticate - aborting")
+            return
+        headers = {"Authorization": f"Bearer {token}"}
 
         incidents = await _fetch_all_incidents(client, headers)
         geocoded = [i for i in incidents if i.get("latitude") is not None]

@@ -30,16 +30,12 @@ async def main(dry_run: bool = False, limit: int | None = None) -> None:
 
     async with httpx.AsyncClient(base_url=api_url, timeout=30) as client:
         # Authenticate
-        username = os.environ.get("COLLECTOR_OSAF_USERNAME", "collector")
-        password = os.environ.get("COLLECTOR_OSAF_PASSWORD", "")
+        from collector.osaf_auth import login
 
-        resp = await client.post(
-            "/auth/login",
-            data={"username": username, "password": password},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        resp.raise_for_status()
-        token = resp.json()["access_token"]
+        token = await login(client)
+        if token is None:
+            logger.error("Cannot authenticate - aborting")
+            return
         headers = {"Authorization": f"Bearer {token}"}
 
         # Fetch all incidents (paginated)
