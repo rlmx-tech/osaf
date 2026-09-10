@@ -283,6 +283,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Automatic publication of incident candidates.** Candidates had been
+  accumulating in `needs_review` since the ingestion rework made publication an
+  explicit admin action — 230 of them by 2026-09-10. `scripts.auto_publish_candidates`
+  publishes the ones that clear a rule, through the same `review_candidate`
+  path an admin's Publish button uses, so case numbers, sources, and the audit
+  row are all produced exactly as before. A candidate is eligible when its
+  newest observation (the one that would be published) has extraction and
+  verification confidence of at least 0.8, a verifier verdict of valid and not
+  a likely duplicate, no validation errors, an attack or sighting event type,
+  and a source document that carried a real article body.
+
+  The body clause is the one confidence cannot stand in for. A queued sighting
+  had been verified at 0.9 with the notes "The text only provides a headline
+  ... No contradictions found." The verifier was right — nothing contradicted
+  the extraction, because there was nothing there. Verification measures
+  agreement with the text, not whether the text was worth anything, so a
+  confidence-only rule would have published exactly the records the promotion
+  gate exists to stop.
+
+  Dry-run is the default and `--apply` publishes, at most 25 per run by
+  default so a wrong rule can only do so much before someone reads its output.
+  Nothing is ever rejected automatically; everything that fails the rule waits
+  for a person, and the dry run reports why each one was held. Publications
+  are attributed to a dedicated `auto-publisher` admin account, created once by
+  `scripts.create_auto_publisher`, rather than to a person who never saw the
+  record. Its password is random and discarded at creation, so no credential
+  for it exists. Deactivating it switches `--apply` off without a deploy, and
+  re-running the bootstrap will not reactivate it.
+
 - **The collector fetches real article bodies.** Until now every news item
   carried only the headline and the feed's own summary, which is what let a
   wrapper link with no article behind it reach the extractor at all.
