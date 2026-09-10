@@ -21,6 +21,7 @@ hosts that can never yield text, and every other link is simply tried.
 
 import logging
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlsplit
 
 import feedparser
 import httpx
@@ -34,6 +35,34 @@ logger = logging.getLogger(__name__)
 
 MAX_ENTRIES_PER_FEED = 15
 
+
+def canonical_article_url(link: str) -> str:
+    """The publisher's own address for a Bing News wrapper link; anything else as given.
+
+    Bing's RSS link is a redirect wrapper carrying a fresh `tid` on every fetch,
+    so it cannot serve as an article's identity: keyed on it, every poll turned
+    each article back into a new source. Measured 2026-09-10, two days of that
+    had produced 4,449 source documents for 87 articles, each one extracted by
+    the LLM, and the body cache keyed on the same wrapper refetched every
+    publisher page every cycle.
+
+    The destination sits in the wrapper's `url=` parameter and is recovered
+    without a request. The feed is external input, so only Bing's own apiclick
+    wrapper is unwrapped, and only toward an http(s) destination; anything else
+    is returned unchanged and still goes through the fetcher's own checks.
+    """
+    parts = urlsplit(link)
+    host = (parts.hostname or "").lower()
+    if not (host == "bing.com" or host.endswith(".bing.com")):
+        return link
+    if parts.path.lower() != "/news/apiclick.aspx":
+        return link
+
+    target = (parse_qs(parts.query).get("url") or [""])[0].strip()
+    target_parts = urlsplit(target)
+    if target_parts.scheme not in ("http", "https") or not target_parts.hostname:
+        return link
+    return target
 
 class NewsPoller(BasePoller):
     name = "news"
@@ -86,6 +115,9 @@ class NewsPoller(BasePoller):
         title = entry.get("title", "")
         if not link or not title:
             return None
+        # Everything below — the body fetch, the cache key, the stored source and
+        # therefore the dedup key — must see the stable publisher address.
+        link = canonical_article_url(link)
 
         summary = entry.get("summary", entry.get("description", ""))
         publisher = (

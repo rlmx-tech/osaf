@@ -60,6 +60,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Every Bing News article was re-ingested on every poll.** Bing's RSS `link`
+  is a redirect wrapper that carries a fresh `tid` each time the feed is
+  fetched, and the collector keyed sources on that wrapper, so every
+  ten-minute poll turned each article back into a new source. Two days after
+  the Bing feeds went live (2026-09-08 to 2026-09-10) that had produced 4,453
+  source documents for 88 distinct articles, the worst of them ingested 330
+  times, and an LLM extraction had run on 4,363 of the copies. The article
+  body cache was keyed on the same wrapper, so it never hit, and every
+  publisher page was fetched again every cycle, which is the abuse that cache
+  was built to prevent. It reached the public site too: the first page of
+  Shark News showed 20 items with only 7 distinct titles. Nothing had been
+  published as an incident from the duplicates. The publisher's own URL sits in
+  the wrapper's `url=` parameter, and the collector now uses it as the item's
+  identity, body-fetch target, cache key, and stored source, so citations point
+  at the publisher rather than at Bing. Only Bing's own `apiclick` wrapper is
+  unwrapped, and only toward an http(s) destination. This stops new
+  duplicates. It does not remove the ones already stored.
+
 - **Half of all verification passes were being thrown away as "no response from
   Ollama".** glm-5.3-flash reasons before it answers, and `num_predict` caps the
   reasoning and the answer together — it is not a limit on the reply alone. The
