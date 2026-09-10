@@ -60,6 +60,50 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **The dedup headline guard matched constant publisher titles.** The GSAF
+  backfill (see Added) submitted 174 rows whose source title is always
+  `Global Shark Attack File (GSAF)` — 31 characters, clearing the 30-char
+  headline-fingerprint floor — and `_find_source_duplicate` treated that
+  publisher string as a syndicated headline: every submission matched the
+  first incident by case number that already carried a GSAF-titled source,
+  so all 174 merged onto one unrelated 2026 incident (OSAF-2026-0030) and
+  its sources grew from 4 to 177. Nothing was lost — the merge branch
+  attaches sources rather than overwriting — but 173 citations landed on
+  the wrong incident and the date/coords guard never ran. The fingerprint
+  branch now ignores constant reference titles (`_NON_HEADLINE_TITLES`), a
+  regression test pins the GSAF title to `None`, and the mis-merged rows
+  were removed with the audit entries annotated as reversed. Commit
+  `5d3de29`.
+
+- **The map basemap rendered "API KEY REQUIRED" watermarks.** Carto ended
+  anonymous access to `basemaps.cartocdn.com`: both `dark_all` and
+  `light_all`, standard and retina, now return tiles stamped with the
+  watermark instead of blocking them — confirmed by fetching the exact
+  production tiles and inspecting the PNGs. Incident markers kept rendering
+  (Leaflet does not depend on the tile layer), so the site looked half-alive
+  with no map under the data. Switched to OpenStreetMap standard tiles with
+  matching attribution; the served bundle now references
+  `tile.openstreetmap.org` and carries no `cartocdn` reference. Trade-off,
+  flagged not hidden: the map loses its dark theme. A hosted dark style
+  (MapTiler/Stadia key or self-hosted tiles) is the path back if the dark
+  look matters. Commit `cc5040c`.
+
+- **The auth rework stranded three offline scripts.** `/auth/login` now
+  returns the JWT only as an HttpOnly cookie; `backfill_gsaf.py` still read
+  `resp.json()["access_token"]`, which silently yields `None` — so its first
+  live run authenticated (HTTP 200), found no token, and aborted after the
+  geocoding was already done. `backfill_coast_snap.py` and
+  `backfill_geocode.py` were worse: they indexed the missing field and would
+  have raised `KeyError` at next use. All three now go through the shared
+  helper under Added; `news_client.py` already read the cookie and is
+  untouched. Commits `29b68b0`, `a68d9ed`.
+
+- **`backfill_gsaf.py` could never run.** It imports `xlrd` to parse the
+  GSAF spreadsheet, but `xlrd` was never a collector dependency — the
+  647-line script had failed at `import xlrd` on every attempt since it was
+  written. Added to collector dependencies; dry-run now parses the full
+  sheet. Commit `b96c0dc`.
+
 - **Every Bing News article was re-ingested on every poll.** Bing's RSS `link`
   is a redirect wrapper that carries a fresh `tid` each time the feed is
   fetched, and the collector keyed sources on that wrapper, so every
@@ -300,6 +344,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   search are escaped so user input is matched literally. Commit `8877882`.
 
 ### Added
+
+- **Shared OSAF API auth helper for collector scripts.** `collector/osaf_auth.py`
+  exposes one `login()` that reads the JWT from the `access_token` cookie
+  (with the old body field as fallback) and logs a named error when the
+  response carries no token, so the next API contract change fails loudly at
+  the single login path instead of silently inside three different scripts.
+  `backfill_gsaf.py`, `backfill_coast_snap.py`, and `backfill_geocode.py`
+  all delegate to it. Commit `a68d9ed`.
+
+- **GSAF 2024-2026 delta backfill.** The historical import had left recent
+  years thin against the current GSAF5 spreadsheet: 52 GSAF-sourced 2024
+  incidents, 67 of 69 for 2025, 19 of 53 for 2026. `backfill_gsaf.py` was
+  finally runnable (xlrd fix above), the collector account's credentials
+  verified, and the bounded window submitted: 174 rows parsed, 77 geocoded
+  (GSAF's vague location strings — "Indian Ocean, Maahvah Laamu Atoll" —
+  legitimately fail; 97 left without coordinates), 174 submitted, 0
+  skipped. The run also surfaced the dedup guard bug under Fixed. One
+  counting correction: the "19 of 53 for 2026" gap was partly a
+  source-attribution artifact — the original import marked many 2026 rows
+  without the `Global Shark Attack File (GSAF)` title, so ~17 July-August
+  dates remain candidates for a later re-run against the fixed guard.
 
 - **Automatic publication of incident candidates.** Candidates had been
   accumulating in `needs_review` since the ingestion rework made publication an
