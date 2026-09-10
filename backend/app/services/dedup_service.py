@@ -18,6 +18,14 @@ _GENERIC_HEADLINE_PREFIXES = (
     "latest articles",
     "recent articles",
 )
+# Constant publisher/reference titles that recur across unrelated incidents.
+# They clear the length floor but are not headlines; matching on them made
+# every GSAF backfill submission merge into the first incident that already
+# carried a GSAF source (2026-09-10). Listed as prefixes to catch variants.
+_NON_HEADLINE_TITLES = (
+    "global shark attack file",
+    "global shark attack file (gsaf)",
+)
 
 
 def _headline_fingerprint(title: str | None) -> str | None:
@@ -27,6 +35,8 @@ def _headline_fingerprint(title: str | None) -> str | None:
     headline = title.rsplit(" - ", 1)[0]
     fingerprint = re.sub(r"\s+", " ", headline).strip().casefold()
     if len(fingerprint) < 30 or fingerprint.startswith(_GENERIC_HEADLINE_PREFIXES):
+        return None
+    if fingerprint.startswith(_NON_HEADLINE_TITLES):
         return None
     return fingerprint
 
