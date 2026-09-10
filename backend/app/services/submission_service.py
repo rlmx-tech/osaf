@@ -24,7 +24,9 @@ from app.utils.case_number import generate_case_number
 from app.utils.geo import point_from_coords
 
 
-VALID_ROLES: frozenset[str] = frozenset({"public", "verified_contributor", "admin"})
+VALID_ROLES: frozenset[str] = frozenset(
+    {"public", "verified_contributor", "backfill_contributor", "admin"}
+)
 
 
 class SubmissionService:
@@ -42,7 +44,10 @@ class SubmissionService:
 
         case_number = await generate_case_number(self.db)
 
-        # Verified contributors get auto-published
+        # Verified contributors get auto-published. The backfill_contributor
+        # role deliberately does NOT: batch tools land in the review queue so
+        # a bulk-import bug cannot publish directly (the 2026-09-10 GSAF
+        # publisher-title merge showed why the gate matters).
         auto_verify = user.role in ("admin", "verified_contributor")
 
         incident = Incident(
