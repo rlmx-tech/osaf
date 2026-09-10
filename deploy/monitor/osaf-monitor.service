@@ -1,0 +1,10 @@
+[Unit]
+Description=OSAF external site monitor (tiles/CSP/API/bundle)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/osaf/osaf_monitor.sh
+# Output only on failure (watchdog pattern). Non-zero exit -> onFailure alert below.
+TimeoutStartSec=120
