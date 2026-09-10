@@ -24,7 +24,7 @@ An open-source, community-driven alternative to the International Shark Attack F
 | **Database** | PostgreSQL 16 + PostGIS | Geospatial queries for map features |
 | **API** | FastAPI (Python 3.12+) | Auto OpenAPI docs, PostGIS integration, async |
 | **Frontend** | React 18 (Vite) | SPA with client-side routing |
-| **Map** | Leaflet + OpenStreetMap | Free, self-hostable tile server |
+| **Map** | Leaflet + OpenStreetMap tiles | `tile.openstreetmap.org`; CSP `img-src` must list the bare host — `https://*.tile.openstreetmap.org` alone does NOT match it |
 | **Charts** | Recharts | Trend dashboards and statistics |
 | **Auth** | JWT (role-based) | Admin, Verified Contributor, Public |
 | **Containerization** | Docker Compose | Full stack in containers |
@@ -421,6 +421,31 @@ GET    /api/v1/admin/audit-log               # View changes
 2. Automatically published with status `verified`
 3. Still logged in audit trail
 4. Can edit existing incidents (changes logged)
+
+**Bulk-import caveat:** anything hitting `POST /submissions` with a
+verified-contributor account publishes directly. The `collector` account is a
+verified contributor because the news pipeline auto-publishes; that means any
+backfill script reusing its credentials also publishes directly. Batch tools
+should use the dedicated `backfill` account (role `backfill_contributor`,
+publish-gated) — see `scripts.create_backfill_user`.
+
+**Dedup guard (do not weaken without reading the history):**
+`dedup_service.find_duplicate_incident` runs before any new row — first by
+source URL / syndicated headline, then by exact date + classification +
+coords ≤150 m with a victim age/sex guard. The headline-fingerprint branch
+ignores constant publisher/reference titles (`_NON_HEADLINE_TITLES`): in
+2026-09 a GSAF backfill whose every source title was `Global Shark Attack
+File (GSAF)` (31 chars, over the 30-char fingerprint floor) merged 174
+submissions onto one unrelated incident because the constant title matched
+as a headline. Regression test:
+`backend/tests/test_dedup_gsaf_publisher_title.py`. After any bulk write,
+reconcile via `incident_audit_log` — a batch tool reporting zero errors is
+not the same as matching the right things.
+
+**Auth contract:** `/auth/login` returns the JWT only as an HttpOnly cookie
+(`access_token`); the JSON body carries no token. Collector scripts must go
+through `collector/osaf_auth.login` — scripts reading
+`resp.json()["access_token"]` predate the rework and silently get `None`.
 
 ### Admins
 - Full CRUD on all incidents

@@ -26,9 +26,14 @@ The ISAF is the world's only scientifically documented comprehensive shark attac
 ## Features
 
 - Interactive world map with classification-colored markers and clustering
+  (OpenStreetMap tiles; the map basemap switched from CARTO to OSM after Carto
+  ended anonymous tile access)
 - Searchable/filterable incident database
 - Trend dashboards and statistics (by year, country, species, activity)
 - Public incident submission with admin review queue
+- Duplicate-resistant ingestion: source-URL and same-event (date + classification
+  + ≤150 m + victim guard) matching attaches syndicated coverage as extra
+  citations on the existing incident instead of creating duplicates
 - Durable collector jobs with leases, retries, and dead-letter visibility
 - Immutable source evidence and versioned AI extraction provenance
 - Reviewable incident candidates linked to canonical published records
