@@ -473,10 +473,13 @@ async def authenticate(client: httpx.AsyncClient) -> str | None:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         resp.raise_for_status()
-        token = resp.json().get("access_token")
+        # The API returns the JWT as an HttpOnly cookie (COOKIE_NAME = "access_token"),
+        # not in the JSON body. news_client.py reads it the same way.
+        token = resp.cookies.get("access_token") or resp.json().get("access_token")
         if token:
             logger.info("Authenticated as %s", settings.osaf_username)
             return token
+        logger.error("Login 200 but no access_token cookie in response")
     except httpx.HTTPError:
         logger.exception("Authentication failed")
     return None
