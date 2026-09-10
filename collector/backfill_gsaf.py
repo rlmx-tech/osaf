@@ -598,7 +598,7 @@ async def main():
         return
 
     # Submit to OSAF API
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(base_url=settings.osaf_api_url, timeout=30) as client:
         token = await authenticate(client)
         if not token:
             logger.error("Cannot authenticate — aborting")
