@@ -12,6 +12,7 @@ review_candidate would publish — has all of:
   * a source document that carried a real article body
   * an incident date no more than a day after the article's date and no more
     than 30 days before it
+  * an article no more than 30 days old when it was captured
 
 The body clause is the one confidence cannot replace. A queued sighting was
 verified at 0.9 with the notes "The text only provides a headline ... No
@@ -155,6 +156,14 @@ def date_problem(observation: ExtractedObservation, source: SourceDocument) -> s
         return "unreadable incident date"
     if source.published_at is None:
         return "no article date"
+    # A feed can serve an old article as if it were new: Bing surfaced a 2004
+    # report on 2026-09-10, and its incident date matched its own article. The
+    # gap to capture is fixed once captured, so a later re-judge agrees.
+    if (
+        source.captured_at is not None
+        and source.captured_at - source.published_at > MAX_REPORTING_LAG
+    ):
+        return "article over 30 days old when captured"
 
     article = source.published_at.astimezone(UTC).date()
     if incident > article + TIME_ZONE_SLACK:

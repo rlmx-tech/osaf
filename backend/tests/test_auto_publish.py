@@ -64,6 +64,7 @@ async def _candidate(
     status="needs_review",
     created_at=None,
     published_at=ARTICLE_DATE,
+    captured_at=None,
     source_url=None,
 ):
     """A candidate with one observation over one source document."""
@@ -81,6 +82,7 @@ async def _candidate(
         payload=payload or PAYLOAD,
         created_at=created_at,
         published_at=published_at,
+        captured_at=captured_at,
         source_url=source_url,
     )
     await db.commit()
@@ -89,8 +91,14 @@ async def _candidate(
 
 async def _observation(
     db, candidate, *, raw_metadata, created_at=None, published_at=ARTICLE_DATE,
-    source_url=None, **fields,
+    captured_at=None, source_url=None, **fields,
 ):
+    # Captured a few hours after publication unless a test says otherwise. Left
+    # to the database default (now), the gap would grow with the calendar and
+    # these fixtures would start failing the stale-article clause.
+    if captured_at is None and published_at is not None:
+        captured_at = published_at + timedelta(hours=3)
+    dates = {"captured_at": captured_at} if captured_at is not None else {}
     doc = SourceDocument(
         id=uuid.uuid4(),
         dedup_key=f"test:{uuid.uuid4()}",
@@ -98,6 +106,7 @@ async def _observation(
         source_name="Test Feed",
         source_url=source_url or f"https://example.com/{uuid.uuid4()}",
         published_at=published_at,
+        **dates,
         title="Surfer bitten at Coogee Beach",
         body_excerpt="A surfer was bitten at Coogee Beach on Monday. " * 30,
         raw_metadata=raw_metadata,
@@ -332,6 +341,36 @@ class TestTheIncidentDateMustFitTheArticle:
             published_at=datetime(2026, 9, 8, 23, 30, tzinfo=hawaii),
         )
         assert await _eligible_ids(db) == {candidate.id}
+
+
+class TestTheArticleMustBeNewsWhenCaptured:
+    """On 2026-09-10 Bing served a Mail & Guardian report dated 2004-12-16. Its
+    incident date matched its own article, so the date clause passed it, and it
+    was published as OSAF-2026-6659, a copy of the existing West Beach record.
+    Only the gap between the article's date and its capture gives that away.
+    """
+
+    @pytest.mark.asyncio
+    async def test_an_old_article_resurfacing_in_a_feed_is_not_eligible(self, db):
+        await _candidate(
+            db,
+            payload=_dated("2004-12-16"),
+            published_at=datetime(2004, 12, 16, 2, 32, tzinfo=UTC),
+            captured_at=datetime(2026, 9, 10, 17, 0, tzinfo=UTC),
+        )
+        assert await _eligible_ids(db) == set()
+
+    @pytest.mark.asyncio
+    async def test_an_article_captured_within_thirty_days_is_eligible(self, db):
+        candidate = await _candidate(
+            db, captured_at=ARTICLE_DATE + timedelta(days=30)
+        )
+        assert await _eligible_ids(db) == {candidate.id}
+
+    @pytest.mark.asyncio
+    async def test_an_article_captured_after_thirty_days_is_not_eligible(self, db):
+        await _candidate(db, captured_at=ARTICLE_DATE + timedelta(days=31))
+        assert await _eligible_ids(db) == set()
 
 
 class TestOneCandidatePerArticle:
