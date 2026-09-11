@@ -13,9 +13,7 @@ To revoke batch-write access without a deploy, deactivate the account.
 """
 
 import asyncio
-import os
 import secrets
-import sys
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

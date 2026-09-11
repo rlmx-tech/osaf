@@ -5,6 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/osaf/osaf_monitor.sh
-# Output only on failure (watchdog pattern). Non-zero exit -> onFailure alert below.
+# Runs from the git checkout, so a `git pull` updates it. Silent when healthy;
+# on drift it prints the issues and exits 1. Add OnFailure= under [Unit] to
+# route that to a notifier.
+ExecStart=/opt/osaf/deploy/monitor/osaf_monitor.sh
 TimeoutStartSec=120

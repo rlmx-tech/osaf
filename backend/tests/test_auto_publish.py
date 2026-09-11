@@ -10,7 +10,7 @@ requires the source to have carried a real article body.
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import func, select
@@ -39,6 +39,9 @@ PAYLOAD = {
     "longitude": 151.26,
 }
 
+# The article reporting PAYLOAD's 2026-09-07 incident came out the next morning.
+ARTICLE_DATE = datetime(2026, 9, 8, 6, 0, tzinfo=UTC)
+
 GOOD_VERIFICATION = {
     "is_valid": True,
     "is_duplicate_likely": False,
@@ -60,6 +63,8 @@ async def _candidate(
     payload=None,
     status="needs_review",
     created_at=None,
+    published_at=ARTICLE_DATE,
+    source_url=None,
 ):
     """A candidate with one observation over one source document."""
     candidate = IncidentCandidate(id=uuid.uuid4(), status=status)
@@ -75,18 +80,24 @@ async def _candidate(
         raw_metadata={"has_article_body": True} if raw_metadata is None else raw_metadata,
         payload=payload or PAYLOAD,
         created_at=created_at,
+        published_at=published_at,
+        source_url=source_url,
     )
     await db.commit()
     return candidate
 
 
-async def _observation(db, candidate, *, raw_metadata, created_at=None, **fields):
+async def _observation(
+    db, candidate, *, raw_metadata, created_at=None, published_at=ARTICLE_DATE,
+    source_url=None, **fields,
+):
     doc = SourceDocument(
         id=uuid.uuid4(),
         dedup_key=f"test:{uuid.uuid4()}",
         source_platform="news_rss",
         source_name="Test Feed",
-        source_url=f"https://example.com/{uuid.uuid4()}",
+        source_url=source_url or f"https://example.com/{uuid.uuid4()}",
+        published_at=published_at,
         title="Surfer bitten at Coogee Beach",
         body_excerpt="A surfer was bitten at Coogee Beach on Monday. " * 30,
         raw_metadata=raw_metadata,
@@ -230,7 +241,7 @@ class TestTheNewestObservationGoverns:
 
     @pytest.mark.asyncio
     async def test_a_bad_newer_observation_blocks_a_good_older_one(self, db):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         candidate = await _candidate(db, created_at=now - timedelta(hours=2))
         await _observation(
             db, candidate,
@@ -244,7 +255,7 @@ class TestTheNewestObservationGoverns:
 
     @pytest.mark.asyncio
     async def test_a_good_newer_observation_qualifies_despite_a_bad_older_one(self, db):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         candidate = await _candidate(
             db, confidence=0.4, created_at=now - timedelta(hours=2)
         )
@@ -257,6 +268,96 @@ class TestTheNewestObservationGoverns:
         )
         await db.commit()
         assert await _eligible_ids(db) == {candidate.id}
+
+
+def _dated(incident_date):
+    return {**PAYLOAD, "incident_date": incident_date}
+
+
+class TestTheIncidentDateMustFitTheArticle:
+    """News reports an incident within days. A date far from the article's is a bad
+    extraction or a retrospective, and either one needs a person.
+
+    The 2026-09-10 manual --apply ran without this rule. It published a 2015, a
+    2004 and a 2010 bite as 2026 cases, two incidents with no date at all, and
+    several dated after the article that reported them.
+    """
+
+    @pytest.mark.asyncio
+    async def test_an_incident_the_day_before_the_article_is_eligible(self, db):
+        candidate = await _candidate(db)
+        assert await _eligible_ids(db) == {candidate.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("incident_date", [None, "", "last Tuesday", "2026-13-01"])
+    async def test_a_missing_or_unreadable_date_is_not_eligible(self, db, incident_date):
+        await _candidate(db, payload=_dated(incident_date))
+        assert await _eligible_ids(db) == set()
+
+    @pytest.mark.asyncio
+    async def test_an_article_with_no_date_is_not_eligible(self, db):
+        """Without the article's date there is nothing to check the incident's against."""
+        await _candidate(db, published_at=None)
+        assert await _eligible_ids(db) == set()
+
+    @pytest.mark.asyncio
+    async def test_one_day_after_the_article_is_allowed_for_time_zones(self, db):
+        """A 06:00 UTC article can report an incident on the same local day in Sydney."""
+        candidate = await _candidate(db, payload=_dated("2026-09-09"))
+        assert await _eligible_ids(db) == {candidate.id}
+
+    @pytest.mark.asyncio
+    async def test_an_incident_after_the_article_is_not_eligible(self, db):
+        await _candidate(db, payload=_dated("2026-09-10"))
+        assert await _eligible_ids(db) == set()
+
+    @pytest.mark.asyncio
+    async def test_thirty_days_before_the_article_is_the_limit(self, db):
+        candidate = await _candidate(db, payload=_dated("2026-08-09"))
+        assert await _eligible_ids(db) == {candidate.id}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("incident_date", ["2026-08-08", "2015-06-27"])
+    async def test_a_retrospective_is_not_eligible(self, db, incident_date):
+        await _candidate(db, payload=_dated(incident_date))
+        assert await _eligible_ids(db) == set()
+
+    @pytest.mark.asyncio
+    async def test_the_article_date_is_taken_in_utc(self, db):
+        """23:30 on 09-08 in Hawaii is 09:30 on 09-09 in UTC, so 09-10 is within a day."""
+        hawaii = timezone(timedelta(hours=-10))
+        candidate = await _candidate(
+            db,
+            payload=_dated("2026-09-10"),
+            published_at=datetime(2026, 9, 8, 23, 30, tzinfo=hawaii),
+        )
+        assert await _eligible_ids(db) == {candidate.id}
+
+
+class TestOneCandidatePerArticle:
+    """One article yields one publication per run.
+
+    Later candidates from the same article wait for the next run. By then the
+    first one is published, and submit_incident's source-URL match attaches them
+    as citations instead of creating a new incident.
+    """
+
+    @pytest.mark.asyncio
+    async def test_only_the_first_candidate_from_an_article_is_eligible(self, db):
+        url = "https://example.com/one-article"
+        first = await _candidate(db, source_url=url)
+        await _candidate(db, source_url=url)
+
+        report = await run(db, apply=False)
+
+        assert [c.id for c in report.eligible] == [first.id]
+        assert report.refusals["another candidate from the same article"] == 1
+
+    @pytest.mark.asyncio
+    async def test_different_articles_are_judged_separately(self, db):
+        a = await _candidate(db, source_url="https://example.com/a")
+        b = await _candidate(db, source_url="https://example.com/b")
+        assert await _eligible_ids(db) == {a.id, b.id}
 
 
 class TestScope:
@@ -373,7 +474,10 @@ class TestApply:
     async def test_one_unpublishable_candidate_does_not_stop_the_rest(self, db):
         """The payload passed the rule but fails IncidentCreate validation."""
         await _auto_publisher(db)
-        broken = await _candidate(db, payload={"country": "Australia"})
+        # Dated, so the date rule passes it and IncidentCreate is what refuses it.
+        broken = await _candidate(
+            db, payload={"country": "Australia", "incident_date": "2026-09-07"}
+        )
         good = await _candidate(db)
         # Read the ids now. run() rolls the shared session back after the failed
         # publish, which expires these objects too, and an expired attribute

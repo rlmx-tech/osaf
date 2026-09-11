@@ -10,12 +10,23 @@ review_candidate would publish — has all of:
   * no validation errors
   * an event type of attack or sighting
   * a source document that carried a real article body
+  * an incident date no more than a day after the article's date and no more
+    than 30 days before it
 
-The last clause is the one confidence cannot replace. A queued sighting was
+The body clause is the one confidence cannot replace. A queued sighting was
 verified at 0.9 with the notes "The text only provides a headline ... No
 contradictions found." The verifier was right: nothing contradicted the
 extraction, because there was nothing there. Verification measures agreement
 with the text, not whether the text was worth anything.
+
+The date clause exists because a manual --apply on 2026-09-10, run before it
+did, published a 2015, a 2004 and a 2010 bite as 2026 cases, two incidents
+with no date, and several dated after the article reporting them. News covers
+an incident within days; anything else is a retrospective or a misread date.
+
+A run publishes at most one candidate per article. The others wait, and on the
+next run submit_incident's source-URL match attaches them to the first as
+citations rather than creating near-copies.
 
 Everything that fails stays in needs_review for a person. Nothing here rejects.
 
@@ -33,6 +44,7 @@ import asyncio
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import UTC, date, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -48,6 +60,12 @@ from scripts.create_auto_publisher import AUTO_PUBLISHER_USERNAME
 MIN_CONFIDENCE = 0.8
 MIN_VERIFICATION = 0.8
 PUBLISHABLE_EVENT_TYPES = frozenset({"attack", "sighting"})
+
+# The article's date is taken in UTC and the incident's is local, so an
+# incident can fall on the article's next calendar day.
+TIME_ZONE_SLACK = timedelta(days=1)
+MAX_REPORTING_LAG = timedelta(days=30)
+SAME_ARTICLE = "another candidate from the same article"
 
 # One run publishes at most this many. A rule that turns out to be wrong should
 # only be able to do so much before someone reads the output.
@@ -119,7 +137,31 @@ def eligibility(
     ):
         return False, "verification confidence below bar"
 
+    problem = date_problem(observation, source)
+    if problem:
+        return False, problem
+
     return True, "eligible"
+
+
+def date_problem(observation: ExtractedObservation, source: SourceDocument) -> str | None:
+    """Name what is wrong with the incident date against the article's, or None."""
+    raw = (observation.payload or {}).get("incident_date")
+    if not raw:
+        return "no incident date"
+    try:
+        incident = date.fromisoformat(str(raw))
+    except ValueError:
+        return "unreadable incident date"
+    if source.published_at is None:
+        return "no article date"
+
+    article = source.published_at.astimezone(UTC).date()
+    if incident > article + TIME_ZONE_SLACK:
+        return "incident dated after the article"
+    if incident < article - MAX_REPORTING_LAG:
+        return "incident over 30 days before the article"
+    return None
 
 
 def _newest(candidate: IncidentCandidate) -> ExtractedObservation | None:
@@ -156,6 +198,7 @@ async def _judge(db: AsyncSession, report: Report) -> None:
         )
     ).scalars().all()
 
+    articles_taken: set[str] = set()
     for candidate in candidates:
         report.considered += 1
         observation = _newest(candidate)
@@ -164,6 +207,11 @@ async def _judge(db: AsyncSession, report: Report) -> None:
         if not ok:
             report.refusals[reason] += 1
             continue
+        # Oldest candidate first, so the earliest extraction of an article wins.
+        if source.source_url in articles_taken:
+            report.refusals[SAME_ARTICLE] += 1
+            continue
+        articles_taken.add(source.source_url)
         report.eligible.append(Decision(
             id=candidate.id,
             confidence=observation.confidence,

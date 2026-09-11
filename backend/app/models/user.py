@@ -41,7 +41,9 @@ class User(Base):
         # level; users.role — the column that decides who can publish and who
         # can delete — was relying entirely on API-layer allowlists.
         CheckConstraint(
-            "role IN ('admin', 'verified_contributor', 'public')",
+            # Must match migration c4d5e6f7a8b9. Databases built from the models
+            # (the test suite's) otherwise reject the backfill role.
+            "role IN ('admin', 'verified_contributor', 'backfill_contributor', 'public')",
             name="valid_role",
         ),
         {"comment": "Users and contributors"},

@@ -11,7 +11,7 @@ instead of publishing, and the role cannot log into the review UI paths
 (publish/reject/promote remain admin-only).
 
 Revision ID: c4d5e6f7a8b9
-Revises: a1b2c3d4e5f6
+Revises: b2c3d4e5f6a7
 """
 
 from collections.abc import Sequence
