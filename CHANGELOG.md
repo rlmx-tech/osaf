@@ -7,6 +7,87 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Security
 
+- **CrowdSec deployed and enrolled on the production VPS (2026-09-10 evening).**
+  Agent v1.4.6 (Ubuntu repo) + `crowdsecurity/sshd` collection + firewall bouncer
+  (nftables backend, api-key auth). Enrolled to the CrowdSec console
+  (`cscli console enroll`, alert sharing custom/manual/tainted enabled) and CAPI
+  authenticated, so the community blocklist flows pre-emptively. Live within the
+  hour: five `ssh-bf` bans enforced. fail2ban remains active alongside during the
+  soak; retire it once the journals confirm CrowdSec catches the same floods.
+  The integration key in the creds file (`~/.env-creds` on hera) is a
+  console *integration* key (alert forwarding), NOT an engine enrollment key —
+  `cscli console enroll` rejects it; enrollment keys come from app.crowdsec.net.
+
+- **Review queue re-verification pass (2026-09-10 evening).** The 162
+  needs_review candidates were triaged by running the auto-publisher's own
+  `eligibility()` per candidate: 84 verifier-refused (92 of those were genuine
+  model refusals with recorded reasons; 17 infra-failed with empty
+  "Ollama verification failed"; 2 stranded empty verdicts), 75 no-article-body,
+  1 low-extraction-confidence. The 19 stranded/infra-failed were re-verified
+  against their `SourceDocument.body_excerpt` via a versioned append-only
+  observation (`prompt_version + "+reverify"`) — never mutating the old one.
+  Root cause of the original failures: `glm-5.3-flash:cloud` fills `thinking`
+  before `response`, so small `num_predict` budgets return an empty response
+  that the collector recorded as a verification failure. 7 verdicts landed
+  (3 PASS, 4 FAIL with honest refusal notes); 12 remain transient
+  infra-failures. 5 candidates published (≤25 guard held, failed: 0) —
+  incidents 6,623 verified. Lesson recorded in CLAUDE.md: reconcile after
+  every bulk write; a batch tool reporting zero errors is not the same as
+  matching the right things.
+
+### Changed
+
+- **Dedicated `backfill_contributor` role (`c4d5e6f7a8b9`).** The collector
+  account is a `verified_contributor` and auto-publishes on submission, so any
+  backfill script reusing its credentials published directly — the GSAF
+  backfill showed the failure mode (a bulk write whose only safety was the
+  dedup guard, no review gate behind it). Submissions from the new role run
+  through `find_duplicate_incident` like everyone else but land as `pending`;
+  publish/reject/promote stay admin-only. Migration chained after
+  `b2c3d4e5f6a7` (initial version created a second Alembic head — fixed in
+  `3f15564`). `scripts.create_backfill_user.py` bootstraps the account
+  (password printed once, stored in deploy env). Regression tests pin the
+  role validity and the no-auto-publish rule (164 unit tests pass).
+  E2E-verified in production: backfill login + submit → `pending`, test row
+  cleaned up.
+
+- **LLM near-dupe merge ran with `--apply` (24 merged, 6,617→6,593).** The
+  `osaf-dedupe.timer` (nightly 04:30 UTC, persistent) already existed and ran
+  dry-run each night; validated a dry-run live (23 groups), backed up
+  `incidents` + `incident_sources` first, then applied. Spot-checked: the
+  Coogee Beach 2026-06-13 quadruple collapsed to one incident, the
+  Lady Elliot/`Lady Elliott` spelling-variant pair to one. All audit-logged
+  `merged_llm`.
+
+### Operations
+
+- **External site monitor (`d1dc196`).** `deploy/monitor/osaf_monitor.sh`
+  checks what container health cannot see — the two 2026-09-10 map failures
+  both passed container health checks: CSP `img-src` still whitelists the OSM
+  tile host, tiles return a real image (Carto-watermark failure mode), API
+  serves, bundle carries the OSM URL. Watchdog pattern: silent + exit 0
+  healthy; exit 1 naming each issue. Deployed as `osaf-monitor.timer`
+  (15 min, persistent) on the production VPS. Alerting is journal-only for
+  now; wire OnFailure when wanted.
+
+- **CSP fix deployed and verified (`3e713aa`).** `img-src` now lists the bare
+  `https://tile.openstreetmap.org` (CSP wildcards need ≥1 label before the
+  dot; the wildcard alone never matched). Live header verified post-deploy;
+  map rendering confirmed by screenshot.
+
+### Docs
+
+- **CLAUDE.md + README.md catch-up (`00ffb47`).** Auth cookie contract
+  (`osaf_auth.login` as the one login path), the dedup guard history including
+  the GSAF publisher-title failure mode and the reconcile-after-bulk-writes
+  rule, the verified-contributor publish caveat for bulk imports, and the
+  map-tile/CSP interaction note. README features list the dedup-resistant
+  ingestion and the basemap provider change.
+
+### Security
+
+
+
 - **Public statistics counted unverified and rejected incidents.** Every
   `StatsService` aggregate filtered on classification alone, while
   `list_incidents` and the map service both carry a verified-only filter.
