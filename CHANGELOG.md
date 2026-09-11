@@ -5,6 +5,39 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Auto-publish ran without a date rule, and put 15 bad incidents on the
+  site (held 2026-09-11).** The `osaf-autopublish` unit is a dry run, but
+  `--apply` was run by hand on 2026-09-10 (17:26 and 22:53 UTC) before the
+  proposed date checks existed. It created 26 incidents. Among them were
+  2004, 2010 and 2015 bites filed as 2026 cases, two with no date, several
+  dated after the article reporting them, Coogee 2026-06-13 twice, and a 2004
+  Mail & Guardian story Bing served as new (OSAF-2026-6659, almost certainly a
+  copy of OSAF-2026-2424). The rule now holds a candidate when its incident
+  date is missing or unreadable, when it falls more than a day after the
+  article or more than 30 days before it, when the article has no date, or
+  when the article was over 30 days old at capture. It also publishes one
+  candidate per article per run. The new `scripts.hold_auto_published`
+  re-judged all 21 machine-published incidents still live and moved the 15
+  that fail to `needs_review` (the admin queue), each with a `held` audit
+  entry. It never deletes, and it leaves anything a person published alone. 6
+  stayed public; a re-run finds nothing to hold. The unit stays dry-run.
+  Commits `cde45b5`, `327831a`.
+
+- **The `backfill_contributor` role only existed in the migration.** The
+  `User` model's CHECK constraint still listed three roles, so any database
+  built from the models rejected the role. The old test asserted against a
+  set literal it defined itself and could not catch that; it now submits
+  through `SubmissionService` with a real user row. Commit `cde45b5`.
+
+- **The site monitor fired every minute.** A stray `OnCalendar=*:*:00` sat
+  beside `OnUnitActiveSec=15min`, so every run fetched an OpenStreetMap tile,
+  against the spirit of the OSM tile policy. It now runs every 15 minutes,
+  sends an identifying User-Agent, and runs from the git checkout instead of
+  an untracked copy. `echo | grep -q` became here-strings, which ends the
+  "Broken pipe" journal line on every run. Commit `cde45b5`.
+
 ### Security
 
 - **CrowdSec deployed and enrolled on the production VPS (2026-09-10 evening).**
@@ -30,8 +63,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   before `response`, so small `num_predict` budgets return an empty response
   that the collector recorded as a verification failure. 7 verdicts landed
   (3 PASS, 4 FAIL with honest refusal notes); 12 remain transient
-  infra-failures. 5 candidates published (≤25 guard held, failed: 0) —
-  incidents 6,623 verified. Lesson recorded in CLAUDE.md: reconcile after
+  infra-failures. *Correction (2026-09-11):* the audit log shows the
+  auto-publisher's manual `--apply` runs that day created 26 incidents and
+  merged 54 sources, not 5; see the auto-publish entry under Fixed, which
+  held 15 of them. Lesson recorded in CLAUDE.md: reconcile after
   every bulk write; a batch tool reporting zero errors is not the same as
   matching the right things.
 
