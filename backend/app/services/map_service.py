@@ -17,12 +17,17 @@ def _parse_bbox(bbox: str) -> tuple[float, float, float, float]:
     return parts[0], parts[1], parts[2], parts[3]
 
 
-def _apply_filters(query, *, classification, species=None, fatal, date_from, date_to, activity=None, severity=None):
+def _apply_filters(query, *, classification, species=None, fatal, date_from, date_to, activity=None, severity=None, historical="exclude"):
     """Apply common filters to a query."""
     # Only include incidents with coordinates
     query = query.where(Incident.coordinates.is_not(None))
     # Only show verified incidents on map
     query = query.where(Incident.verification_status == "verified")
+    # Historical filter: exclude by default (current events on the map)
+    if historical == "only":
+        query = query.where(Incident.is_historical.is_(True))
+    elif historical != "all":
+        query = query.where(Incident.is_historical.is_(False))
 
     if classification:
         values = [v.strip() for v in classification.split(",")]
@@ -70,6 +75,7 @@ class MapService:
         date_to: str | None = None,
         activity: str | None = None,
         severity: str | None = None,
+        historical: str = "exclude",
     ) -> dict:
         query = select(
             Incident.id,
@@ -97,6 +103,7 @@ class MapService:
             date_to=date_to,
             activity=activity,
             severity=severity,
+            historical=historical,
         )
 
         if bbox:
@@ -148,6 +155,7 @@ class MapService:
         fatal: bool | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
+        historical: str = "exclude",
     ) -> dict:
         # Grid size decreases as zoom increases (more detail at higher zoom)
         grid_size = 180.0 / (2 ** zoom)
@@ -170,6 +178,7 @@ class MapService:
             fatal=fatal,
             date_from=date_from,
             date_to=date_to,
+            historical=historical,
         )
 
         if bbox:

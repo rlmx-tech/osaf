@@ -112,6 +112,15 @@ def _incident_to_public_response(data: dict) -> PublicIncidentResponse:
     )
 
 
+def _apply_historical_filter(query, mode: str):
+    """historical mode: exclude (default, current events only) | only | all."""
+    if mode == "only":
+        return query.where(Incident.is_historical.is_(True))
+    if mode == "all":
+        return query
+    return query.where(Incident.is_historical.is_(False))
+
+
 class IncidentService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -132,12 +141,14 @@ class IncidentService:
         order: str = "desc",
         page: int = 1,
         per_page: int = 50,
+        historical: str = "exclude",
     ) -> PaginatedIncidentResponse:
         query = (
             select(Incident)
             .options(selectinload(Incident.sources))
             .where(Incident.verification_status == "verified")
         )
+        query = _apply_historical_filter(query, historical)
 
         # Filters
         if classification:

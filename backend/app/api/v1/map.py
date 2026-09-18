@@ -17,6 +17,7 @@ async def get_map_geojson(
     date_to: str | None = Query(None, description="End date (YYYY-MM-DD)"),
     activity: str | None = Query(None, description="Comma-separated activities"),
     severity: str | None = Query(None, description="Comma-separated severities"),
+    historical: str = Query("exclude", description="Historical filter: exclude | only | all"),
     db: AsyncSession = Depends(get_db),
 ):
     """Return incidents as GeoJSON FeatureCollection, optionally filtered by bounding box."""
@@ -30,6 +31,7 @@ async def get_map_geojson(
         date_to=date_to,
         activity=activity,
         severity=severity,
+        historical=historical,
     )
 
 
@@ -52,4 +54,5 @@ async def get_map_clusters(
         fatal=fatal,
         date_from=date_from,
         date_to=date_to,
+        historical=historical,
     )
