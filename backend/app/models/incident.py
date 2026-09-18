@@ -81,6 +81,9 @@ class Incident(Base):
         UUID(as_uuid=True), ForeignKey("users.id")
     )
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # True for GSAF historical imports and past-attack news rehashes ingested
+    # long after the event. Excluded from current-event feeds and recent stats.
+    is_historical: Mapped[bool] = mapped_column(Boolean, default=False)
     submitted_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id")
     )
