@@ -226,7 +226,7 @@ export default function AdminPage() {
                         <p className="text-sm font-medium text-gray-100">
                           {incident.location_description} — {incident.country}
                         </p>
-                        <p className="text-xs text-gray-300 mt-1">
+                        <p className="text-xs text-gray-200 mt-1">
                           {formatDate(incident.incident_date)}
                           {incident.description && ` — ${incident.description.substring(0, 220)}…`}
                         </p>
@@ -304,11 +304,11 @@ export default function AdminPage() {
                               </span>
                             )}
                             {confidence != null && (
-                              <span className="text-xs text-gray-300">
+                              <span className="text-xs text-gray-200">
                                 {Math.round(confidence * 100)}% confidence
                               </span>
                             )}
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-gray-300">
                               {candidate.observation_count} supporting observation{candidate.observation_count === 1 ? "" : "s"}
                             </span>
                           </div>
@@ -316,7 +316,7 @@ export default function AdminPage() {
                             {payload.location_description || "Location uncertain"}
                             {payload.country ? ` — ${payload.country}` : ""}
                           </p>
-                          <p className="text-xs text-gray-300 mt-1">
+                          <p className="text-xs text-gray-200 mt-1">
                             {formatDate(payload.incident_date)}
                             {payload.description ? ` — ${payload.description.substring(0, 260)}` : ""}
                           </p>
@@ -330,7 +330,7 @@ export default function AdminPage() {
                               {candidate.source.source_name}: {candidate.source.title}
                             </a>
                           )}
-                          <p className="text-xs text-gray-400 mt-1">
+                          <p className="text-xs text-gray-300 mt-1">
                             {candidate.match_rationale}
                           </p>
                         </div>
@@ -355,7 +355,7 @@ export default function AdminPage() {
                                 : "bg-red-600 hover:bg-red-700"
                             }`}
                           >
-                            {rejectPicker === candidate.id ? "Close" : "Reject"}
+                            {rejectPicker === candidate.id ? "Close" : "Reject ▾"}
                           </button>
 
                         </div>
