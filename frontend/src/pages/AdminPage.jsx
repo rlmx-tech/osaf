@@ -5,6 +5,20 @@ import { CLASSIFICATION_LABELS, CLASSIFICATION_COLORS } from "../utils/constants
 import { formatDate } from "../utils/formatters";
 import { safeUrl } from "../utils/safeUrl";
 
+// Canonical rejection reasons: canned note per button; one click = one API
+// call with {"notes": ...}. Vocabulary aligns with scripts/reject_headline_only.py
+// and the soak's observed failure classes. Free-text via "Other".
+const REJECTION_REASONS = [
+  { key: "duplicate", label: "Duplicate", note: "Duplicate of an already-published incident (same real-world event)." },
+  { key: "headline", label: "Headline-only", note: "Source was headline-only; no article body to ground the extraction." },
+  { key: "not-shark", label: "Not shark", note: "Source does not describe a shark incident, sighting, or encounter." },
+  { key: "wrong-date", label: "Wrong date", note: "The extracted incident date is not supported by the source text." },
+  { key: "wrong-location", label: "Wrong location", note: "The extracted location is not supported by the source text." },
+  { key: "wrong-class", label: "Wrong class", note: "The classification does not match the described incident." },
+  { key: "fabricated", label: "Fabricated", note: "Extraction contains details not present in the source text." },
+  { key: "stale", label: "Superseded", note: "Newer, more complete coverage of the same event exists." },
+];
+
 export default function AdminPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState("queue");
@@ -16,6 +30,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
+  const [rejectPicker, setRejectPicker] = useState(null); // candidate id with open reason picker
 
   const fetchQueue = useCallback(async () => {
     setLoading(true);
@@ -104,10 +119,11 @@ export default function AdminPage() {
     }
   };
 
-  const handleCandidateAction = async (id, action) => {
+  const handleCandidateAction = async (id, action, notes) => {
     setActionLoading(id);
     try {
-      await client.put(`/admin/candidates/${id}/${action}`, {});
+      await client.put(`/admin/candidates/${id}/${action}`, notes ? { notes } : {});
+      if (action === "reject") setRejectPicker(null);
       fetchCandidates();
     } catch (err) {
       const detail = err.response?.data?.detail;
@@ -136,7 +152,7 @@ export default function AdminPage() {
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 tab === t.key
                   ? "border-blue-500 text-blue-400"
-                  : "border-transparent text-gray-500 hover:text-gray-300"
+                  : "border-transparent text-gray-400 hover:text-gray-200"
               }`}
             >
               {t.label}
@@ -171,8 +187,8 @@ export default function AdminPage() {
           <>
             {submissions.data.length === 0 ? (
               <div className="text-center text-gray-500 py-16">
-                <p className="text-lg">No pending submissions</p>
-                <p className="text-sm mt-1">All caught up!</p>
+                <p className="text-lg text-gray-200">No pending submissions</p>
+                <p className="text-sm mt-1 text-gray-400">All caught up!</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -207,12 +223,12 @@ export default function AdminPage() {
                             {incident.verification_status}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-300">
+                        <p className="text-sm font-medium text-gray-100">
                           {incident.location_description} — {incident.country}
                         </p>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-gray-300 mt-1">
                           {formatDate(incident.incident_date)}
-                          {incident.description && ` — ${incident.description.substring(0, 120)}...`}
+                          {incident.description && ` — ${incident.description.substring(0, 220)}…`}
                         </p>
                         <button
                           onClick={() => navigate(`/incidents/${incident.id}`)}
@@ -288,33 +304,33 @@ export default function AdminPage() {
                               </span>
                             )}
                             {confidence != null && (
-                              <span className="text-xs text-gray-500">
-                                {Math.round(confidence * 100)}% extraction confidence
+                              <span className="text-xs text-gray-300">
+                                {Math.round(confidence * 100)}% confidence
                               </span>
                             )}
-                            <span className="text-xs text-gray-600">
+                            <span className="text-xs text-gray-400">
                               {candidate.observation_count} supporting observation{candidate.observation_count === 1 ? "" : "s"}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-200">
+                          <p className="text-sm font-medium text-gray-100">
                             {payload.location_description || "Location uncertain"}
                             {payload.country ? ` — ${payload.country}` : ""}
                           </p>
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-gray-300 mt-1">
                             {formatDate(payload.incident_date)}
-                            {payload.description ? ` — ${payload.description.substring(0, 180)}` : ""}
+                            {payload.description ? ` — ${payload.description.substring(0, 260)}` : ""}
                           </p>
                           {candidate.source && safeUrl(candidate.source.source_url) && (
                             <a
                               href={safeUrl(candidate.source.source_url)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="block text-xs text-blue-400 hover:text-blue-300 mt-2 truncate"
+                              className="block text-xs text-blue-400 hover:text-blue-300 mt-2 line-clamp-2"
                             >
                               {candidate.source.source_name}: {candidate.source.title}
                             </a>
                           )}
-                          <p className="text-xs text-gray-600 mt-1">
+                          <p className="text-xs text-gray-400 mt-1">
                             {candidate.match_rationale}
                           </p>
                         </div>
@@ -327,14 +343,48 @@ export default function AdminPage() {
                             Publish
                           </button>
                           <button
-                            onClick={() => handleCandidateAction(candidate.id, "reject")}
+                            onClick={() =>
+                              rejectPicker === candidate.id
+                                ? setRejectPicker(null)
+                                : setRejectPicker(candidate.id)
+                            }
                             disabled={actionLoading === candidate.id}
-                            className="bg-red-600 text-white text-xs px-3 py-1.5 rounded hover:bg-red-700 disabled:opacity-50"
+                            className={`text-white text-xs px-3 py-1.5 rounded disabled:opacity-50 ${
+                              rejectPicker === candidate.id
+                                ? "bg-gray-600 hover:bg-gray-500"
+                                : "bg-red-600 hover:bg-red-700"
+                            }`}
                           >
-                            Reject
+                            {rejectPicker === candidate.id ? "Close" : "Reject"}
                           </button>
+
                         </div>
                       </div>
+                      {rejectPicker === candidate.id && (
+                        <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-gray-700">
+                          <span className="text-xs text-gray-300 self-center mr-1">Reason:</span>
+                          {REJECTION_REASONS.map((r) => (
+                            <button
+                              key={r.key}
+                              onClick={() => handleCandidateAction(candidate.id, "reject", r.note)}
+                              disabled={actionLoading === candidate.id}
+                              className="bg-red-900/40 text-red-200 text-xs px-2.5 py-1.5 rounded border border-red-800 hover:bg-red-800 hover:text-white disabled:opacity-50"
+                            >
+                              {r.label}
+                            </button>
+                          ))}
+                          <button
+                            onClick={() => {
+                              const other = window.prompt("Reason for rejection:");
+                              if (other && other.trim()) handleCandidateAction(candidate.id, "reject", other.trim());
+                            }}
+                            disabled={actionLoading === candidate.id}
+                            className="bg-gray-700 text-gray-200 text-xs px-2 py-1.5 rounded border border-gray-600 hover:bg-gray-600 hover:text-white disabled:opacity-50"
+                          >
+                            Other…
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -420,7 +470,7 @@ export default function AdminPage() {
         {!loading && tab === "audit" && auditLog && (
           <div className="space-y-2">
             {auditLog.data.length === 0 ? (
-              <p className="text-center text-gray-500 py-16">No audit entries</p>
+              <p className="text-center text-gray-400 py-16">No audit entries</p>
             ) : (
               auditLog.data.map((entry) => (
                 <div
@@ -442,7 +492,7 @@ export default function AdminPage() {
                     {entry.incident_id?.substring(0, 8)}...
                   </span>
                   {entry.notes && (
-                    <span className="text-gray-500 text-xs">{entry.notes}</span>
+                    <span className="text-gray-300 text-xs">{entry.notes}</span>
                   )}
                   <span className="text-gray-600 text-xs ml-auto">
                     {new Date(entry.changed_at).toLocaleString()}
