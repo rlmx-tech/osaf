@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     # cycles on the same feeds: 22/57 empty at 2048, 6/42 at 4096, 0/45 here.
     ollama_num_predict: int = 8192
 
+    # Shadow soak (optional). When both are set, the extractor replays every
+    # extraction/verification prompt against this endpoint and logs both
+    # responses to /app/data/shadow_diffs.jsonl via collector.shadow_logger.
+    # Strictly observational — an unreachable shadow endpoint must never affect
+    # capture, which is why these default to empty rather than failing startup.
+    shadow_ollama_url: str = ""
+    shadow_ollama_model: str = ""
+
     # Reddit (asyncpraw)
     reddit_client_id: str = ""
     reddit_client_secret: str = ""

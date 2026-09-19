@@ -30,6 +30,7 @@ from collector.config import (
 )
 from collector.geocoder import geocode_incident
 from collector.models import ExtractedIncident, RawItem, SourcePlatform, VerificationResult
+from collector.shadow_logger import log_shadow_diff
 
 logger = logging.getLogger(__name__)
 
@@ -244,8 +245,16 @@ def _parse_json_response(text: str) -> dict | None:
     return None
 
 
-async def _call_ollama(prompt: str) -> str | None:
-    """Send a prompt to Ollama and return the response text."""
+async def _call_ollama(
+    prompt: str, source_url: str = "unknown", prompt_version: str = "v1"
+) -> str | None:
+    """Send a prompt to Ollama and return the response text.
+
+    When a shadow endpoint is configured, the same prompt is replayed against
+    it and both responses are logged for the soak comparison. The shadow call
+    is strictly observational: it never delays, blocks, or fails the primary
+    path, and only the primary answer is returned.
+    """
     headers: dict[str, str] = {}
     if settings.ollama_api_key:
         headers["Authorization"] = f"Bearer {settings.ollama_api_key}"
@@ -287,6 +296,36 @@ async def _call_ollama(prompt: str) -> str | None:
                     payload.get("eval_count", "?"),
                     settings.ollama_num_predict,
                 )
+
+            # Shadow soak: replay the identical prompt against the configured
+            # shadow model and log both sides. Failure here is logged at debug
+            # and swallowed — a dead shadow endpoint must never affect capture.
+            if settings.shadow_ollama_url and settings.shadow_ollama_model:
+                try:
+                    s_resp = await client.post(
+                        f"{settings.shadow_ollama_url}/api/generate",
+                        headers={},
+                        json={
+                            "model": settings.shadow_ollama_model,
+                            "prompt": prompt,
+                            "stream": False,
+                            "options": {
+                                "temperature": 0.1,
+                                # glm-5.3 needs 8192 to finish thinking; the
+                                # 4B shadow thinks briefly, but sharing the
+                                # ceiling keeps the comparison apples-to-apples.
+                                "num_predict": settings.ollama_num_predict,
+                            },
+                        },
+                    )
+                    s_resp.raise_for_status()
+                    shadow_answer = s_resp.json().get("response", "")
+                    await log_shadow_diff(
+                        source_url, prompt_version, answer, shadow_answer
+                    )
+                except Exception as exc:
+                    logger.debug("shadow: call failed: %s", exc)
+
             return answer
         except httpx.HTTPError:
             logger.exception("ollama: request failed")
@@ -352,7 +391,7 @@ async def extract_incident(raw: RawItem) -> ExtractedIncident | None:
     safe_text = _sanitize_for_prompt(raw.content[:MAX_EXTRACTION_CHARS])
     today = date.today().isoformat()
     prompt = EXTRACTION_PROMPT.format(text=safe_text, today=today)
-    response = await _call_ollama(prompt)
+    response = await _call_ollama(prompt, source_url=raw.source_url, prompt_version="extract-v3")
 
     if not response:
         logger.warning("extractor: no response from Ollama for %s", raw.source_url)
@@ -449,7 +488,7 @@ async def verify_incident(
     safe_text = _sanitize_for_prompt(raw.content[:MAX_VERIFICATION_CHARS])
     prompt = VERIFICATION_PROMPT.format(data=safe_data, text=safe_text)
 
-    response = await _call_ollama(prompt)
+    response = await _call_ollama(prompt, source_url=raw.source_url, prompt_version="verify-v2")
     if not response:
         logger.warning("verifier: no response from Ollama")
         return VerificationResult(is_valid=False, notes="Ollama verification failed")
