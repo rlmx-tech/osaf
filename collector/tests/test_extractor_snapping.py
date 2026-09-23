@@ -20,7 +20,7 @@ def test_vague_location_is_left_unmapped_instead_of_guessing(monkeypatch):
     import collector.extractor as ex
 
     # Ollama returns a vague, country-only location.
-    async def fake_ollama(prompt: str) -> str:
+    async def fake_ollama(prompt: str, source_url: str = "unknown", prompt_version: str = "v1") -> str:
         return json.dumps({
             "is_relevant": True,
             "confidence": 0.6,
@@ -48,7 +48,7 @@ def test_vague_location_is_left_unmapped_instead_of_guessing(monkeypatch):
 def test_specific_location_is_not_snapped(monkeypatch):
     import collector.extractor as ex
 
-    async def fake_ollama(prompt: str) -> str:
+    async def fake_ollama(prompt: str, source_url: str = "unknown", prompt_version: str = "v1") -> str:
         return json.dumps({
             "is_relevant": True,
             "confidence": 0.8,
