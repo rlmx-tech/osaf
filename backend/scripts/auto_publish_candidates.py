@@ -29,6 +29,16 @@ A run publishes at most one candidate per article. The others wait, and on the
 next run submit_incident's source-URL match attaches them to the first as
 citations rather than creating near-copies.
 
+Nor does it publish anything that may already be on record: an incident within
+100 km and 10 days, or, when either side has no coordinates, in the same
+country within 10 days. The same test applies between candidates in one run.
+submit_incident's own duplicate check needs the exact date and 150 m, and
+syndicated coverage rarely agrees that closely. Replayed against the 91
+candidates the dry run passed between 2026-09-11 and 09-23, that check alone
+would have published 19 duplicates of incidents already on record, among them
+nine more copies of the Sorrento death. A held candidate costs a person a
+click; a duplicate costs a public record that double-counts a fatality.
+
 Everything that fails stays in needs_review for a person. Nothing here rejects.
 
 Publication goes through IngestionService.review_candidate, the same path an
@@ -42,20 +52,23 @@ Dry-run by default.
 
 import argparse
 import asyncio
+import math
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, date, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from geoalchemy2 import Geography
+from sqlalchemy import cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import async_session
-from app.models import User
+from app.models import Incident, User
 from app.models.ingestion import ExtractedObservation, IncidentCandidate, SourceDocument
 from app.services.ingestion_service import IngestionService
+from app.utils.geo import point_from_coords
 from scripts.create_auto_publisher import AUTO_PUBLISHER_USERNAME
 
 MIN_CONFIDENCE = 0.8
@@ -67,6 +80,12 @@ PUBLISHABLE_EVENT_TYPES = frozenset({"attack", "sighting"})
 TIME_ZONE_SLACK = timedelta(days=1)
 MAX_REPORTING_LAG = timedelta(days=30)
 SAME_ARTICLE = "another candidate from the same article"
+NEAR_EARLIER_CANDIDATE = "near another candidate in this run"
+
+# How close a report must be to one already on record to wait for a person.
+# Wide on purpose: a wrong hold costs a click, a wrong publish a duplicate.
+NEARBY_RADIUS_M = 100_000
+NEARBY_DAYS = timedelta(days=10)
 
 # One run publishes at most this many. A rule that turns out to be wrong should
 # only be able to do so much before someone reads the output.
@@ -94,6 +113,72 @@ class Decision:
     match_key: str | None
 
 
+@dataclass(frozen=True)
+class Place:
+    """Where and when a candidate says its incident happened."""
+
+    incident_date: date
+    country: str
+    latitude: float | None
+    longitude: float | None
+
+    @property
+    def has_point(self) -> bool:
+        return self.latitude is not None and self.longitude is not None
+
+    @classmethod
+    def of(cls, payload: dict) -> "Place":
+        # eligibility() has already checked the date parses.
+        lat, lon = payload.get("latitude"), payload.get("longitude")
+        return cls(
+            incident_date=date.fromisoformat(str(payload["incident_date"])),
+            country=str(payload.get("country") or "").strip().lower(),
+            latitude=float(lat) if lat is not None and lon is not None else None,
+            longitude=float(lon) if lat is not None and lon is not None else None,
+        )
+
+
+def _distance_m(a: Place, b: Place) -> float:
+    lat1, lon1, lat2, lon2 = map(math.radians, (a.latitude, a.longitude, b.latitude, b.longitude))
+    h = (math.sin((lat2 - lat1) / 2) ** 2
+         + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2)
+    return 2 * 6_371_000 * math.asin(math.sqrt(h))
+
+
+def may_be_same_event(a: Place, b: Place) -> bool:
+    """The in-run half of the nearby test; the database half is _nearby_incident."""
+    if abs(a.incident_date - b.incident_date) > NEARBY_DAYS:
+        return False
+    if a.has_point and b.has_point:
+        return _distance_m(a, b) <= NEARBY_RADIUS_M
+    return bool(a.country) and a.country == b.country
+
+
+async def _nearby_incident(db: AsyncSession, place: Place) -> str | None:
+    """Case number of an incident on record that may be the same event, or None."""
+    near_in_time = [
+        Incident.verification_status != "rejected",
+        Incident.incident_date.between(
+            place.incident_date - NEARBY_DAYS, place.incident_date + NEARBY_DAYS
+        ),
+    ]
+    same_country = func.lower(Incident.country) == place.country
+    if place.has_point:
+        point = cast(point_from_coords(place.longitude, place.latitude), Geography)
+        where = or_(
+            func.ST_DWithin(cast(Incident.coordinates, Geography), point, NEARBY_RADIUS_M),
+            Incident.coordinates.is_(None) & same_country,
+        )
+    else:
+        where = same_country
+    return (
+        await db.execute(
+            select(Incident.case_number).where(*near_in_time, where)
+            .order_by(Incident.case_number).limit(1)
+        )
+    ).scalar_one_or_none()
+
+
 @dataclass
 class Report:
     considered: int = 0
@@ -101,6 +186,7 @@ class Report:
     published: list[Decision] = field(default_factory=list)
     failed: list[tuple[Decision, str]] = field(default_factory=list)
     refusals: Counter = field(default_factory=Counter)
+    near_record: list[tuple[object, str]] = field(default_factory=list)
 
 
 def eligibility(
@@ -208,6 +294,7 @@ async def _judge(db: AsyncSession, report: Report) -> None:
     ).scalars().all()
 
     articles_taken: set[str] = set()
+    places_taken: list[Place] = []
     for candidate in candidates:
         report.considered += 1
         observation = _newest(candidate)
@@ -221,6 +308,17 @@ async def _judge(db: AsyncSession, report: Report) -> None:
             report.refusals[SAME_ARTICLE] += 1
             continue
         articles_taken.add(source.source_url)
+
+        place = Place.of(observation.payload)
+        if any(may_be_same_event(place, taken) for taken in places_taken):
+            report.refusals[NEAR_EARLIER_CANDIDATE] += 1
+            continue
+        on_record = await _nearby_incident(db, place)
+        if on_record:
+            report.refusals["near an incident on record"] += 1
+            report.near_record.append((candidate.id, on_record))
+            continue
+        places_taken.append(place)
         report.eligible.append(Decision(
             id=candidate.id,
             confidence=observation.confidence,
@@ -273,6 +371,8 @@ def _print(report: Report, *, apply: bool, limit: int) -> None:
     print(f"eligible        : {len(report.eligible)}")
     for reason, count in report.refusals.most_common():
         print(f"  held — {reason:<34} {count}")
+    for candidate_id, case_number in report.near_record:
+        print(f"    {candidate_id}  near {case_number}")
 
     if not apply:
         print(f"\nDRY RUN — nothing written. --apply would publish up to {limit}:")

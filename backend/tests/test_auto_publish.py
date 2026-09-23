@@ -18,10 +18,12 @@ from sqlalchemy import func, select
 from app.models import Incident, User
 from app.models.ingestion import ExtractedObservation, IncidentCandidate, SourceDocument
 from app.services.auth_service import verify_password
+from app.utils.geo import point_from_coords
 from scripts.auto_publish_candidates import (
     AUTO_PUBLISHER_USERNAME,
     MIN_CONFIDENCE,
     MIN_VERIFICATION,
+    NEAR_EARLIER_CANDIDATE,
     AutoPublisherMissing,
     eligibility,
     run,
@@ -37,6 +39,15 @@ PAYLOAD = {
     "source_type": "news_article",
     "latitude": -33.92,
     "longitude": 151.26,
+}
+
+# Same day, a different incident: Durban is 11,000 km from Coogee.
+ELSEWHERE = {
+    **PAYLOAD,
+    "country": "South Africa",
+    "location_description": "Durban",
+    "latitude": -29.86,
+    "longitude": 31.03,
 }
 
 # The article reporting PAYLOAD's 2026-09-07 incident came out the next morning.
@@ -395,7 +406,7 @@ class TestOneCandidatePerArticle:
     @pytest.mark.asyncio
     async def test_different_articles_are_judged_separately(self, db):
         a = await _candidate(db, source_url="https://example.com/a")
-        b = await _candidate(db, source_url="https://example.com/b")
+        b = await _candidate(db, source_url="https://example.com/b", payload=ELSEWHERE)
         assert await _eligible_ids(db) == {a.id, b.id}
 
 
@@ -514,8 +525,9 @@ class TestApply:
         """The payload passed the rule but fails IncidentCreate validation."""
         await _auto_publisher(db)
         # Dated, so the date rule passes it and IncidentCreate is what refuses it.
+        # Another country, so the nearby-event hold doesn't catch `good`.
         broken = await _candidate(
-            db, payload={"country": "Australia", "incident_date": "2026-09-07"}
+            db, payload={"country": "Fiji", "incident_date": "2026-09-07"}
         )
         good = await _candidate(db)
         # Read the ids now. run() rolls the shared session back after the failed
@@ -598,3 +610,121 @@ class TestAutoPublisherAccount:
 
         again = await ensure_auto_publisher(db)
         assert again.is_active is False
+
+
+# --- nothing that may already be on record --------------------------------
+
+
+async def _on_record(db, *, case="OSAF-2026-0001", incident_date="2026-09-07",
+                     lat=-33.92, lon=151.26, country="Australia", status="verified"):
+    db.add(Incident(
+        case_number=case,
+        incident_date=datetime.fromisoformat(incident_date).date(),
+        location_description="Coogee Beach, Sydney",
+        country=country,
+        classification="unprovoked",
+        coordinates=point_from_coords(lon, lat) if lat is not None else None,
+        verification_status=status,
+    ))
+    await db.commit()
+
+
+def _at(**changes):
+    return {**PAYLOAD, **changes}
+
+
+class TestNothingAlreadyOnRecord:
+    """Syndicated coverage of a published incident must wait for a person.
+
+    Between 2026-09-11 and 09-23 the dry run passed 91 candidates. Replayed,
+    submit_incident's exact-date, 150 m duplicate check would have let 19 of
+    them through as new incidents: nine more Sorrento deaths, four Glenfield
+    bites, four Busan sightings. Outlets disagree on the date by days and
+    geocode "Sorrento Beach, Perth's north" kilometres apart.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_report_near_a_published_incident_waits(self, db):
+        await _on_record(db)
+        # 8 km away and dated a day later: a different outlet, the same bite.
+        await _candidate(db, payload=_at(incident_date="2026-09-08", latitude=-33.85))
+
+        report = await run(db, apply=False)
+
+        assert report.eligible == []
+        assert report.refusals["near an incident on record"] == 1
+        assert report.near_record[0][1] == "OSAF-2026-0001"
+
+    @pytest.mark.asyncio
+    async def test_a_misread_date_within_ten_days_still_waits(self, db):
+        # One Sorrento report came through dated 09-10 for an attack on 09-18.
+        await _on_record(db, incident_date="2026-09-17")
+        await _candidate(db, payload=_at(incident_date="2026-09-07"),
+                         published_at=datetime(2026, 9, 18, tzinfo=UTC))
+        assert await _eligible_ids(db) == set()
+
+    @pytest.mark.asyncio
+    async def test_far_away_on_the_same_day_is_a_different_incident(self, db):
+        await _on_record(db, lat=-31.83, lon=115.75)  # Perth, 3,300 km away
+        candidate = await _candidate(db)
+        assert await _eligible_ids(db) == {candidate.id}
+
+    @pytest.mark.asyncio
+    async def test_the_same_beach_eleven_days_apart_is_a_different_incident(self, db):
+        await _on_record(db, incident_date="2026-08-27")
+        candidate = await _candidate(db)
+        assert await _eligible_ids(db) == {candidate.id}
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_incident_does_not_hold_anything(self, db):
+        await _on_record(db, status="rejected")
+        candidate = await _candidate(db)
+        assert await _eligible_ids(db) == {candidate.id}
+
+    @pytest.mark.asyncio
+    async def test_a_pending_incident_does(self, db):
+        await _on_record(db, status="pending")
+        await _candidate(db)
+        assert await _eligible_ids(db) == set()
+
+    @pytest.mark.asyncio
+    async def test_without_coordinates_the_country_decides(self, db):
+        await _on_record(db)
+        await _candidate(db, payload=_at(latitude=None, longitude=None))
+        assert await _eligible_ids(db) == set()
+
+    @pytest.mark.asyncio
+    async def test_an_incident_on_record_without_coordinates_counts_by_country(self, db):
+        await _on_record(db, lat=None)
+        await _candidate(db)
+        assert await _eligible_ids(db) == set()
+
+    @pytest.mark.asyncio
+    async def test_without_coordinates_another_country_is_different(self, db):
+        await _on_record(db, country="New Zealand", lat=None)
+        candidate = await _candidate(db, payload=_at(latitude=None, longitude=None))
+        assert await _eligible_ids(db) == {candidate.id}
+
+    @pytest.mark.asyncio
+    async def test_two_reports_of_one_event_in_one_run_publish_once(self, db):
+        first = await _candidate(db, source_url="https://example.com/outlet-a")
+        await _candidate(db, source_url="https://example.com/outlet-b",
+                         payload=_at(latitude=-33.95))
+
+        report = await run(db, apply=False)
+
+        assert [c.id for c in report.eligible] == [first.id]
+        assert report.refusals[NEAR_EARLIER_CANDIDATE] == 1
+
+    @pytest.mark.asyncio
+    async def test_apply_leaves_the_held_report_for_a_person(self, db):
+        await _auto_publisher(db)
+        await _on_record(db)
+        held = await _candidate(db, payload=_at(latitude=-33.85))
+
+        report = await run(db, apply=True)
+
+        assert report.published == []
+        await db.refresh(held)
+        assert held.status == "needs_review"
+        assert await _incident_count(db) == 1
