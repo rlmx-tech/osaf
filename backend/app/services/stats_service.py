@@ -16,14 +16,11 @@ _ATTACK_FILTER = Incident.classification.in_(ATTACK_CLASSIFICATIONS)
 # unverified rows would let anyone move the public headline numbers — and would
 # keep counting an incident an admin had already rejected as a hoax.
 _VERIFIED_FILTER = Incident.verification_status == "verified"
-# Historical imports (GSAF backfill, past-attack rehashes) are excluded from
-# public headline stats so the numbers reflect current-era coverage.
-_NON_HISTORICAL_FILTER = Incident.is_historical.is_(False)
 
 # Deliberately one combined constant rather than two applied side by side: a
 # query added later cannot pick up the classification filter and silently miss
 # the verification one.
-_PUBLIC_ATTACK_FILTER = and_(_ATTACK_FILTER, _VERIFIED_FILTER, _NON_HISTORICAL_FILTER)
+_PUBLIC_ATTACK_FILTER = and_(_ATTACK_FILTER, _VERIFIED_FILTER)
 
 
 class StatsService:

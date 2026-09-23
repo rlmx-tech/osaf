@@ -1,12 +1,25 @@
 import json
 from datetime import date
 
-from geoalchemy2.functions import ST_AsGeoJSON, ST_MakeEnvelope, ST_SnapToGrid, ST_Centroid, ST_Collect, ST_X, ST_Y
+from geoalchemy2.functions import (
+    ST_X,
+    ST_Y,
+    ST_AsGeoJSON,
+    ST_Centroid,
+    ST_Collect,
+    ST_MakeEnvelope,
+    ST_SnapToGrid,
+)
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.incident import Incident
 from app.utils.geo import COARSE_DECIMALS, round_coord
+from app.utils.historical import (
+    DEFAULT_HISTORICAL_MODE,
+    HistoricalMode,
+    apply_historical_filter,
+)
 
 
 def _parse_bbox(bbox: str) -> tuple[float, float, float, float]:
@@ -17,17 +30,13 @@ def _parse_bbox(bbox: str) -> tuple[float, float, float, float]:
     return parts[0], parts[1], parts[2], parts[3]
 
 
-def _apply_filters(query, *, classification, species=None, fatal, date_from, date_to, activity=None, severity=None, historical="exclude"):
+def _apply_filters(query, *, classification, species=None, fatal, date_from, date_to, activity=None, severity=None, historical: HistoricalMode = DEFAULT_HISTORICAL_MODE):
     """Apply common filters to a query."""
     # Only include incidents with coordinates
     query = query.where(Incident.coordinates.is_not(None))
     # Only show verified incidents on map
     query = query.where(Incident.verification_status == "verified")
-    # Historical filter: exclude by default (current events on the map)
-    if historical == "only":
-        query = query.where(Incident.is_historical.is_(True))
-    elif historical != "all":
-        query = query.where(Incident.is_historical.is_(False))
+    query = apply_historical_filter(query, historical)
 
     if classification:
         values = [v.strip() for v in classification.split(",")]
@@ -75,7 +84,7 @@ class MapService:
         date_to: str | None = None,
         activity: str | None = None,
         severity: str | None = None,
-        historical: str = "exclude",
+        historical: HistoricalMode = DEFAULT_HISTORICAL_MODE,
     ) -> dict:
         query = select(
             Incident.id,
@@ -155,7 +164,7 @@ class MapService:
         fatal: bool | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
-        historical: str = "exclude",
+        historical: HistoricalMode = DEFAULT_HISTORICAL_MODE,
     ) -> dict:
         # Grid size decreases as zoom increases (more detail at higher zoom)
         grid_size = 180.0 / (2 ** zoom)

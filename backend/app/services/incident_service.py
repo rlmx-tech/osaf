@@ -1,6 +1,6 @@
 import math
 import re
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -21,9 +21,18 @@ from app.schemas.incident import (
     PaginationMeta,
     PublicIncidentResponse,
 )
-from app.services.dedup_service import attach_sources_to_incident, find_duplicate_incident
+from app.services.dedup_service import (
+    attach_sources_to_incident,
+    find_duplicate_incident,
+)
 from app.utils.case_number import generate_case_number
 from app.utils.geo import point_from_coords, round_coord
+from app.utils.historical import (
+    DEFAULT_HISTORICAL_MODE,
+    HistoricalMode,
+    apply_historical_filter,
+    recorded_late,
+)
 
 ALLOWED_SORT_FIELDS = {
     "incident_date", "case_number", "country", "classification",
@@ -112,15 +121,6 @@ def _incident_to_public_response(data: dict) -> PublicIncidentResponse:
     )
 
 
-def _apply_historical_filter(query, mode: str):
-    """historical mode: exclude (default, current events only) | only | all."""
-    if mode == "only":
-        return query.where(Incident.is_historical.is_(True))
-    if mode == "all":
-        return query
-    return query.where(Incident.is_historical.is_(False))
-
-
 class IncidentService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -141,14 +141,14 @@ class IncidentService:
         order: str = "desc",
         page: int = 1,
         per_page: int = 50,
-        historical: str = "exclude",
+        historical: HistoricalMode = DEFAULT_HISTORICAL_MODE,
     ) -> PaginatedIncidentResponse:
         query = (
             select(Incident)
             .options(selectinload(Incident.sources))
             .where(Incident.verification_status == "verified")
         )
-        query = _apply_historical_filter(query, historical)
+        query = apply_historical_filter(query, historical)
 
         # Filters
         if classification:
@@ -357,6 +357,7 @@ class IncidentService:
             victim_name=data.victim_name,
             fatal=data.fatal,
             description=data.description,
+            is_historical=recorded_late(data.incident_date, datetime.now(UTC)),
         )
 
         if data.coordinates:
@@ -422,6 +423,13 @@ class IncidentService:
                 continue
             changes[field] = {"from": _audit_value(before), "to": _audit_value(value)}
             setattr(incident, field, value)
+
+        # A corrected date can move an incident across the one-year line.
+        if "incident_date" in changes:
+            historical = recorded_late(incident.incident_date, incident.submitted_at)
+            if historical != incident.is_historical:
+                changes["is_historical"] = {"from": incident.is_historical, "to": historical}
+                incident.is_historical = historical
 
         if changes:
             self.db.add(IncidentAuditLog(

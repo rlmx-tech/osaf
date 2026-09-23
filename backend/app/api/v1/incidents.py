@@ -7,13 +7,14 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.incident import (
     IncidentCreate,
-    PublicIncidentResponse,
     IncidentResponse,
     IncidentUpdate,
     PaginatedIncidentResponse,
+    PublicIncidentResponse,
 )
 from app.services.auth_service import require_role
 from app.services.incident_service import IncidentService
+from app.utils.historical import DEFAULT_HISTORICAL_MODE, HistoricalMode
 
 router = APIRouter()
 
@@ -29,7 +30,10 @@ async def list_incidents(
     activity: str | None = Query(None, description="Comma-separated activities"),
     severity: str | None = Query(None, description="Comma-separated severities"),
     report_source: str | None = Query(None, description="Comma-separated report sources"),
-    historical: str = Query("exclude", description="Historical filter: exclude | only | all"),
+    historical: HistoricalMode = Query(
+        DEFAULT_HISTORICAL_MODE,
+        description="exclude: current-era only; only: historical only; all (default): both",
+    ),
     search: str | None = Query(None, max_length=200, description="Full-text search"),
     sort: str = Query("incident_date", description="Sort field"),
     order: str = Query("desc", description="Sort order: asc or desc"),

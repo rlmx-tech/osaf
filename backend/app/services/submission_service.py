@@ -18,11 +18,14 @@ from app.schemas.incident import (
     InternalPaginatedIncidentResponse,
     PaginationMeta,
 )
-from app.services.dedup_service import attach_sources_to_incident, find_duplicate_incident
+from app.services.dedup_service import (
+    attach_sources_to_incident,
+    find_duplicate_incident,
+)
 from app.services.incident_service import _incident_to_response
 from app.utils.case_number import generate_case_number
 from app.utils.geo import point_from_coords
-
+from app.utils.historical import recorded_late
 
 VALID_ROLES: frozenset[str] = frozenset(
     {"public", "verified_contributor", "backfill_contributor", "admin"}
@@ -78,6 +81,7 @@ class SubmissionService:
             victim_name=data.victim_name,
             fatal=data.fatal,
             description=data.description,
+            is_historical=recorded_late(data.incident_date, datetime.now(timezone.utc)),
             verification_status="verified" if auto_verify else "pending",
             submitted_by=user.id,
         )

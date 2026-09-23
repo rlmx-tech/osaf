@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.map_service import MapService
+from app.utils.historical import DEFAULT_HISTORICAL_MODE, HistoricalMode
 
 router = APIRouter()
 
@@ -17,7 +18,10 @@ async def get_map_geojson(
     date_to: str | None = Query(None, description="End date (YYYY-MM-DD)"),
     activity: str | None = Query(None, description="Comma-separated activities"),
     severity: str | None = Query(None, description="Comma-separated severities"),
-    historical: str = Query("exclude", description="Historical filter: exclude | only | all"),
+    historical: HistoricalMode = Query(
+        DEFAULT_HISTORICAL_MODE,
+        description="exclude: current-era only; only: historical only; all (default): both",
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """Return incidents as GeoJSON FeatureCollection, optionally filtered by bounding box."""
@@ -43,6 +47,10 @@ async def get_map_clusters(
     fatal: bool | None = Query(None, description="Fatal only"),
     date_from: str | None = Query(None, description="Start date (YYYY-MM-DD)"),
     date_to: str | None = Query(None, description="End date (YYYY-MM-DD)"),
+    historical: HistoricalMode = Query(
+        DEFAULT_HISTORICAL_MODE,
+        description="exclude: current-era only; only: historical only; all (default): both",
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """Return clustered incident points for the given zoom level."""
