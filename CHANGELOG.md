@@ -7,6 +7,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **The public site hid 96% of the database (fixed 2026-09-23).** The
+  historical filter from 2026-09-18 defaulted to exclude on the incident list,
+  the map and the public stats, and the frontend never asked for more:
+  osaf.net showed 251 of 6,619 verified incidents, and the overview read 94
+  attacks over 2023-2026. Everything is shown by default again, and
+  `?historical=exclude|only` is opt-in. The overview now reads 5,932 attacks
+  over 1900-2026. The flag had been set by SQL as "has a GSAF source", with no
+  audit entries, and that hid 53 incidents from 2026 that the GSAF delta
+  backfill had also cited. An incident is now historical when OSAF first
+  recorded it more than a year after it happened. It is set on create and
+  re-derived when the date is corrected. `scripts.retag_historical` applied
+  the rule in production: 93 incidents moved to current and 17 to historical,
+  each with a `retagged` audit entry. The pre-change flags are in
+  `/opt/osaf/backups/is_historical-pre-retag-*.csv`. `/incidents/map/clusters`
+  had returned 500 on every request since the same change and works again.
+  Commit `1fae0ff`.
+
 - **Auto-publish ran without a date rule, and put 15 bad incidents on the
   site (held 2026-09-11).** The `osaf-autopublish` unit is a dry run, but
   `--apply` was run by hand on 2026-09-10 (17:26 and 22:53 UTC) before the
