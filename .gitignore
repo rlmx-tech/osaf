@@ -52,3 +52,7 @@ frontend/dist/
 # `pip install` from pyproject.toml and use no lockfile, so committing these
 # would imply a reproducibility guarantee the build does not actually give.
 uv.lock
+
+# Server-side database dumps and .env snapshots taken before risky operations
+# on the VPS checkout. Never commit them.
+backups/
