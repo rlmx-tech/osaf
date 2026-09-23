@@ -7,6 +7,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Auto-publish would have posted syndicated duplicates (fixed 2026-09-23).**
+  The rule is still dry-run. Replayed against the 91 candidates it passed
+  between 2026-09-11 and 09-23, `--apply` would have published 19 duplicates
+  of incidents already on record, nine of them the Sorrento death, plus an
+  H5N1 article as an attack. `submit_incident`'s duplicate check needs the
+  exact date and 150 m, and outlets disagree by days and kilometres. A
+  candidate now waits for a person when a non-rejected incident lies within
+  100 km and 10 days of it (same country when either has no coordinates), and
+  the same test applies within a run. Replayed hour by hour, the rule would
+  have published 5 incidents, each a distinct real event. Commit `67e0a38`.
+- **OSAF-2026-6766 dated a year early.** The Busan sighting of 2026-09-18 was
+  extracted as 2025-09-18, most likely from the article's mention of an
+  August 2025 find, and was tagged historical. Corrected through
+  `update_incident` with audit entries, along with the suspected species,
+  which came from a mistranslated headline (bluntnose sixgill) instead of
+  the article body (probable bull shark). No other incident since the v2
+  switch has an incident date a year before its source.
 - **The public site hid 96% of the database (fixed 2026-09-23).** The
   historical filter from 2026-09-18 defaulted to exclude on the incident list,
   the map and the public stats, and the frontend never asked for more:
